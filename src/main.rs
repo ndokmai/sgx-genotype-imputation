@@ -277,7 +277,7 @@ fn main()
 	}
 
 	println!("Running forward-backward algorithm ...");
-	let win_size = mg.len();
+	let win_size = mg.len() / 10;
 	for n in 0..(mg.len() / win_size)
 	{
 		//println!("{}", n);
@@ -287,7 +287,7 @@ fn main()
 
 
 		// Compute and print final imputed sequence
-		for i in 0..mg.len()
+		for i in 0..win_size
 		{
 			let mut max_val = std::f64::MIN;
 			let mut max_idx = 0;
@@ -295,7 +295,7 @@ fn main()
 			{
 				for j in 0..refs.len()
 				{
-					let ans = log_fb[[i,j]] + emit[[k, j, i]].ln();
+					let ans = log_fb[[i, j]] + emit[[k, j, (n * win_size) + i]].ln();
 					if ans > max_val
 					{
 						max_val = ans;
@@ -305,5 +305,6 @@ fn main()
 			}
 			print!("{}", symbols[max_idx]);
 		}
+		println!();
 	}
 }
