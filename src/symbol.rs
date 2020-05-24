@@ -9,29 +9,25 @@ pub enum Symbol {
 
 impl Symbol {
     pub fn parse(c: &char) -> Result<Self, &'static str> {
-        Ok(
-            match c {
-                'A' => Self::A,
-                'C' => Self::C,
-                'G' => Self::G,
-                'T' => Self::T,
-                '.' => Self::Missing,
-                _ => return Err("Invalid symbol character")
-            }
-          )
+        Ok(match c {
+            'A' => Self::A,
+            'C' => Self::C,
+            'G' => Self::G,
+            'T' => Self::T,
+            '.' => Self::Missing,
+            _ => return Err("Invalid symbol character"),
+        })
     }
 
     pub fn from_pos(i: usize) -> Result<Self, &'static str> {
-        Ok(
-            match i {
-                0 => Self::A,
-                1 => Self::C,
-                2 => Self::G,
-                3 => Self::T,
-                4 => Self::Missing,
-                _ => return Err("Invalid position")
-            }
-          )
+        Ok(match i {
+            0 => Self::A,
+            1 => Self::C,
+            2 => Self::G,
+            3 => Self::T,
+            4 => Self::Missing,
+            _ => return Err("Invalid position"),
+        })
     }
 
     pub fn pos(&self) -> usize {
@@ -40,11 +36,10 @@ impl Symbol {
 }
 
 impl std::fmt::Display for Symbol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> { 
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             Self::Missing => write!(f, "."),
-            _ => write!(f, "{:?}", self)
+            _ => write!(f, "{:?}", self),
         }
     }
-
 }
