@@ -1,13 +1,7 @@
-#![allow(dead_code)]
-mod params;
-mod symbol;
+use ndarray::{ArrayView1, Array2, s}; 
+use crate::symbol::Symbol;
+use crate::params::Params;
 
-use ndarray::prelude::*;
-use params::Params;
-use std::env;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use symbol::Symbol;
 
 fn lse_ndarray(x: ArrayView1<f64>) -> f64 {
     let max = x.fold(f64::NEG_INFINITY, |accu, i| f64::max(accu, *i));
@@ -154,51 +148,13 @@ fn log_bwd_wind(
     return r;
 }
 
-fn main() {
-    let args: Vec<_> = env::args().collect();
-    if args.len() != 3 {
-        eprintln!(
-            "Usage: {}\t<Reference_Haplotypes>\t<Imputation_Samples>",
-            args[0]
-        );
-        return;
-    }
-
-    let ref_path = env::args().nth(1).unwrap();
-    let ref_file =
-        BufReader::new(File::open(&ref_path).expect("Cannot open reference haplotypes file"));
-
-    let sample_path = env::args().nth(2).unwrap();
-    let sample_file =
-        BufReader::new(File::open(&sample_path).expect("Cannot open imputation samples file"));
-
-    // It's safer to parse early to make sure the inputs aren't malformed
-    let refs = ref_file
-        .lines()
-        .map(|l| {
-            l.unwrap()
-                .chars()
-                .map(|c| Symbol::parse(&c).unwrap())
-                .collect::<Vec<Symbol>>()
-        })
-        .collect::<Vec<_>>();
-
-    // Ko: I'm not sure what's happening here. Do you mean to take the last line only?
-    let mut mg = Vec::new();
-    for line in sample_file.lines() {
-        let v_line = line.unwrap();
-        // It's safer to parse early to make sure the inputs aren't malformed
-        mg = v_line.chars().map(|c| Symbol::parse(&c).unwrap()).collect();
-    }
-
-    let params = Params::init(&refs[..], mg.len());
-
+pub fn impute(mg: &[Symbol], params: &Params) {
     eprintln!("Running forward-backward algorithm ...");
     let win_size = mg.len() / 10;
     for n in 0..(mg.len() / win_size) {
         //println!("{}", n);
-        let log_fw = log_fwd_wind(&mg[..], &params, refs.len(), n * win_size, win_size);
-        let log_bw = log_bwd_wind(&mg[..], &params, refs.len(), n * win_size, win_size);
+        let log_fw = log_fwd_wind(mg, params, params.num_refs, n * win_size, win_size);
+        let log_bw = log_bwd_wind(mg, params, params.num_refs, n * win_size, win_size);
         let log_fb = log_fw + log_bw;
 
         // Compute and print final imputed sequence
@@ -208,9 +164,9 @@ fn main() {
             for k in 0..4 {
                 let ans = &log_fb.slice(s![i, ..])
                     + &params
-                        .emit
-                        .slice(s![k, .., (n * win_size) + i])
-                        .map(|x| x.ln());
+                    .emit
+                    .slice(s![k, .., (n * win_size) + i])
+                    .map(|x| x.ln());
                 let ans_max = ans
                     .iter()
                     .fold(f64::NEG_INFINITY, |accu, i| f64::max(accu, *i));

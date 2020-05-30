@@ -1,3 +1,5 @@
-/target
+app/target
+client/target
+runner/target
 /data
 Cargo.lock

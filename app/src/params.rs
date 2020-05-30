@@ -5,6 +5,7 @@ pub struct Params {
     pub init: Array1<f64>,
     pub emit: Array3<f64>,
     pub tran: Array2<f64>,
+    pub num_refs: usize
 }
 
 impl Params {
@@ -35,6 +36,6 @@ impl Params {
                 }
             }
         }
-        Self { init, emit, tran }
+        Self { init, emit, tran, num_refs }
     }
 }
