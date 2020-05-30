@@ -1,7 +1,6 @@
-use ndarray::{ArrayView1, Array2, s}; 
-use crate::symbol::Symbol;
 use crate::params::Params;
-
+use crate::symbol::Symbol;
+use ndarray::{s, Array2, ArrayView1};
 
 fn lse_ndarray(x: ArrayView1<f64>) -> f64 {
     let max = x.fold(f64::NEG_INFINITY, |accu, i| f64::max(accu, *i));
@@ -91,30 +90,39 @@ fn lse_ndarray(x: ArrayView1<f64>) -> f64 {
 
 //return r;
 //}
+//
 
-fn log_fwd_wind(
-    mg: &[Symbol],
-    params: &Params,
-    num_refs: usize,
+//fn log_fwd(input_window: ArrayView1<Symbol>, params: &Params) -> Array2<f64> {
+//let (init, emit, tran) = params.get_views();
+//let nrefs = params.nrefs;
+//let mut s = unsafe { Array2::<f64>::uninitialized((input_window.len(), params.nrefs)); };
+//let k = input_window.first().unwrap().pos();
+//s.slice_mut(s![0, ..])
+//.assign(&(init.map(|x| x.ln()) + emit.slice(s![k, .., win_start]).map(|x| x.ln())));
+
+//unimplemented!()
+//}
+
+fn log_fwd_window_single(
+    input: ArrayView1<Symbol>,
     win_start: usize,
     win_size: usize,
+    params: &Params,
 ) -> Array2<f64> {
-    let mut s = Array2::zeros((win_size, num_refs));
-    let init = &params.init;
-    let emit = &params.emit;
-    let tran = &params.tran;
+    let nrefs = params.nrefs;
+    let mut s = unsafe { Array2::<f64>::uninitialized((win_size, nrefs)) };
+    let (init, emit, tran) = params.get_views();
 
-    let k = mg[win_start].pos();
+    let k = input[[win_start]].pos();
 
     s.slice_mut(s![0, ..])
-        .assign(&(init.map(|x| x.ln()) + emit.slice(s![k, .., win_start]).map(|x| x.ln())));
+        .assign(&(&init + &emit.slice(s![k, .., win_start])));
 
     for i in 1..win_size {
-        let k = mg[win_start + i].pos();
-        for j in 0..num_refs {
-            let temp = &s.slice(s![i - 1, ..])
-                + &tran.slice(s![.., j]).map(|x| x.ln())
-                + emit[[k, j, win_start + i]].ln();
+        let k = input[[win_start + i]].pos();
+        for j in 0..nrefs {
+            let temp =
+                &s.slice(s![i - 1, ..]) + &tran.slice(s![.., j]) + emit[[k, j, win_start + i]];
             s[[i, j]] = lse_ndarray(temp.view());
         }
     }
@@ -122,25 +130,24 @@ fn log_fwd_wind(
     return s;
 }
 
-fn log_bwd_wind(
-    mg: &[Symbol],
-    params: &Params,
-    num_refs: usize,
+fn log_bwd_window_single(
+    input: ArrayView1<Symbol>,
     win_start: usize,
     win_size: usize,
+    params: &Params,
 ) -> Array2<f64> {
-    let mut r = Array2::zeros((win_size, num_refs));
-    let tran = &params.tran;
-    let emit = &params.emit;
+    let nrefs = params.nrefs;
+    let mut r = unsafe { Array2::<f64>::uninitialized((win_size, nrefs)) };
+    let (_, emit, tran) = params.get_views();
 
     r.slice_mut(s![win_size - 1, ..]).fill(0.);
 
     for i in (0..win_size - 1).rev() {
-        let k = mg[win_start].pos();
-        for j in (0..num_refs).rev() {
+        let k = input[[win_start]].pos();
+        for j in (0..nrefs).rev() {
             let temp = &r.slice(s![i + 1, ..])
-                + &tran.slice(s![j, ..]).map(|x| x.ln())
-                + &emit.slice(s![k, .., win_start + i + 1]).map(|x| x.ln());
+                + &tran.slice(s![j, ..])
+                + &emit.slice(s![k, .., win_start + i + 1]);
             r[[i, j]] = lse_ndarray(temp.view());
         }
     }
@@ -148,13 +155,13 @@ fn log_bwd_wind(
     return r;
 }
 
-pub fn impute(mg: &[Symbol], params: &Params) {
-    eprintln!("Running forward-backward algorithm ...");
-    let win_size = mg.len() / 10;
-    for n in 0..(mg.len() / win_size) {
+/// Impute multiple inputs
+pub fn impute_single(inputs: ArrayView1<Symbol>, params: &Params) {
+    let win_size = inputs.len() / 10;
+    for n in 0..(inputs.len() / win_size) {
         //println!("{}", n);
-        let log_fw = log_fwd_wind(mg, params, params.num_refs, n * win_size, win_size);
-        let log_bw = log_bwd_wind(mg, params, params.num_refs, n * win_size, win_size);
+        let log_fw = log_fwd_window_single(inputs, n * win_size, win_size, params);
+        let log_bw = log_bwd_window_single(inputs, n * win_size, win_size, params);
         let log_fb = log_fw + log_bw;
 
         // Compute and print final imputed sequence
@@ -162,11 +169,8 @@ pub fn impute(mg: &[Symbol], params: &Params) {
             let mut max_val = f64::NEG_INFINITY;
             let mut max_idx = 0;
             for k in 0..4 {
-                let ans = &log_fb.slice(s![i, ..])
-                    + &params
-                    .emit
-                    .slice(s![k, .., (n * win_size) + i])
-                    .map(|x| x.ln());
+                let ans =
+                    &log_fb.slice(s![i, ..]) + &params.emit.slice(s![k, .., (n * win_size) + i]);
                 let ans_max = ans
                     .iter()
                     .fold(f64::NEG_INFINITY, |accu, i| f64::max(accu, *i));

@@ -1,20 +1,18 @@
-mod params;
-mod symbol;
 mod impute;
 mod input_feed;
+mod params;
+mod symbol;
 
+use impute::impute_single;
+use input_feed::InputFeed;
+use params::Params;
 use std::io::{BufRead, BufReader};
 use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::thread;
-use ndarray::s;
-use params::Params;
 use symbol::Symbol;
-use impute::impute;
-use input_feed::InputFeed;
 
 const RUNNER_HOST: &str = "127.0.0.1:7777";
 const CLIENT_HOST: &str = "127.0.0.1:1234";
-
 
 fn read_refs() -> Vec<Vec<Symbol>> {
     let socket_addr = RUNNER_HOST.to_socket_addrs().unwrap().next().unwrap();
@@ -24,7 +22,7 @@ fn read_refs() -> Vec<Vec<Symbol>> {
     let runner_stream = BufReader::new(runner_stream);
 
     // It's safer to parse early to make sure the inputs aren't malformed
-    let refs = runner_stream 
+    let refs = runner_stream
         .lines()
         .map(|l| {
             l.unwrap()
@@ -47,15 +45,18 @@ fn get_input_feed() -> InputFeed<TcpStream> {
 }
 
 fn main() {
-    let runner_thread = thread::spawn(|| read_refs() );
+    let runner_thread = thread::spawn(|| read_refs());
     let input_feed = get_input_feed();
-    // try taking the first one
-    let input = input_feed.take(1).join().unwrap().unwrap();
+    let inputs = input_feed.take(1).join().unwrap().unwrap();
+    // take the first one
+    let input = inputs.slice(ndarray::s![0, ..]);
     let refs = runner_thread.join().unwrap();
-    let params = Params::init(&refs[..], input.len());
+    let params = Params::init_test_params(&refs[..], inputs.ncols());
     eprintln!("APP: finished initializing parameters");
+
+    eprintln!("APP: start timing imputation ...");
     let now = std::time::Instant::now();
-    impute(input.slice(s![0, ..]).as_slice().unwrap(), &params);
+    impute_single(input, &params);
     println!("APP: imputation takes {} ms", now.elapsed().as_millis());
     eprintln!("APP: done!");
 }

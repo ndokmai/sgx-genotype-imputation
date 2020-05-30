@@ -1,31 +1,29 @@
 use crate::symbol::Symbol;
 use ndarray::{Array1, Array2, Array3};
+use ndarray::{ArrayView1, ArrayView2, ArrayView3};
 
 pub struct Params {
     pub init: Array1<f64>,
     pub emit: Array3<f64>,
     pub tran: Array2<f64>,
-    pub num_refs: usize
+    pub nrefs: usize,
 }
 
 impl Params {
-    pub fn init(refs: &[Vec<Symbol>], mg_len: usize) -> Self {
-        let num_refs = refs.len();
-        let mut init = Array1::<f64>::zeros(num_refs);
-        let mut emit = Array3::<f64>::zeros((5, num_refs, mg_len));
-        let mut tran = Array2::<f64>::zeros((num_refs, num_refs));
+    pub fn init_test_params(refs: &[Vec<Symbol>], input_len: usize) -> Self {
+        let nrefs = refs.len();
+        let mut init = unsafe { Array1::<f64>::uninitialized(nrefs) };
+        let mut emit = unsafe { Array3::<f64>::uninitialized((5, nrefs, input_len)) };
+        let mut tran = unsafe { Array2::<f64>::uninitialized((nrefs, nrefs)) };
 
-        eprintln!("Setting initial probabilities ...");
-        init.fill(1. / (num_refs as f64));
+        init.fill(1. / (nrefs as f64));
 
-        eprintln!("Setting transition probabilities ...");
-        tran.fill((1. - 0.6) / (num_refs as f64));
+        tran.fill((1. - 0.6) / (nrefs as f64));
         tran.diag_mut().fill(0.6);
 
-        eprintln!("Setting emission probabilities ...");
         for i in 0..5 {
-            for j in 0..num_refs {
-                for k in 0..mg_len {
+            for j in 0..nrefs {
+                for k in 0..input_len {
                     if i == 4 {
                         emit[[i, j, k]] = 1.0;
                     } else if refs[j][k].pos() == i {
@@ -36,6 +34,18 @@ impl Params {
                 }
             }
         }
-        Self { init, emit, tran, num_refs }
+        init = init.map(|x| x.ln());
+        emit = emit.map(|x| x.ln());
+        tran = tran.map(|x| x.ln());
+        Self {
+            init,
+            emit,
+            tran,
+            nrefs,
+        }
+    }
+
+    pub fn get_views(&self) -> (ArrayView1<f64>, ArrayView3<f64>, ArrayView2<f64>) {
+        (self.init.view(), self.emit.view(), self.tran.view())
     }
 }

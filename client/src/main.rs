@@ -1,8 +1,8 @@
-use std::net::{TcpStream, ToSocketAddrs, SocketAddr};
-use std::io::copy;
-use std::fs::File;
-use std::time::Duration;
 use std::env;
+use std::fs::File;
+use std::io::copy;
+use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
+use std::time::Duration;
 
 const HOST: &str = "localhost:1234";
 
@@ -10,7 +10,9 @@ fn keep_connecting(socket_addr: &SocketAddr) -> TcpStream {
     loop {
         match TcpStream::connect(socket_addr) {
             Ok(stream) => return stream,
-            _ => { std::thread::sleep(Duration::from_millis(10)); },
+            _ => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
         }
     }
 }
