@@ -13,7 +13,7 @@ impl Params {
     pub fn init_test_params(refs: &[Vec<Symbol>], input_len: usize) -> Self {
         let nrefs = refs.len();
         let mut init = unsafe { Array1::<f64>::uninitialized(nrefs) };
-        let mut emit = unsafe { Array3::<f64>::uninitialized((5, nrefs, input_len)) };
+        let mut emit = unsafe { Array3::<f64>::uninitialized((input_len, 5, nrefs)) };
         let mut tran = unsafe { Array2::<f64>::uninitialized((nrefs, nrefs)) };
 
         init.fill(1. / (nrefs as f64));
@@ -21,15 +21,15 @@ impl Params {
         tran.fill((1. - 0.6) / (nrefs as f64));
         tran.diag_mut().fill(0.6);
 
-        for i in 0..5 {
-            for j in 0..nrefs {
-                for k in 0..input_len {
+        for k in 0..input_len {
+            for i in 0..5 {
+                for j in 0..nrefs {
                     if i == 4 {
-                        emit[[i, j, k]] = 1.0;
+                        emit[[k, i, j]] = 1.0;
                     } else if refs[j][k].pos() == i {
-                        emit[[i, j, k]] = 0.60;
+                        emit[[k, i, j]] = 0.60;
                     } else {
-                        emit[[i, j, k]] = 0.40;
+                        emit[[k, i, j]] = 0.40;
                     }
                 }
             }
