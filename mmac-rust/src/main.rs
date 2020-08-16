@@ -4,8 +4,9 @@ use std::io::{BufReader, BufRead};
 use regex::Regex;
 use std::io::prelude::*;
 
-static REF_FILE: &'static str = "smallref.m3vcf";
+static REF_FILE: &'static str = "largeref.m3vcf";
 static INPUT_FILE: &'static str = "input.txt";
+static OUTPUT_FILE: &'static str = "output.txt";
 
 struct Block {
     indmap: Vec<usize>,
@@ -26,7 +27,7 @@ fn load_chunk_from_input(chunk_id: usize) -> Vec<i8> {
     // and the entire toy data is loaded
     println!("Loading chunk {} from input ({})", chunk_id, INPUT_FILE);
 
-    let n = 936; // TODO: hardcoded variant count
+    let n = 97020; // TODO: hardcoded variant count
     let mut x = vec![0; n];
 
     let f = File::open(INPUT_FILE).expect("Unable to open input file");
@@ -172,6 +173,30 @@ fn impute_chunk(chunk_id: usize) -> Vec<f64> {
     /* Forward pass */
     let mut sprob_all = vec![1.0; m]; // unnormalized
     let mut var_offset: usize = 0;
+
+    // First position emission (edge case)
+    if thap[0] != -1 {
+        let block = &blocks[0];
+        let err = 0.00999;
+        let tsym = thap[0];
+        let afreq = if tsym == 1 {
+            block.afreq[0]
+        } else {
+            1.0 - block.afreq[0]
+        };
+        let background = 1e-5;
+
+        for i in 0..m {
+            let emi = if tsym == block.rhap[[0,block.indmap[i]]] {
+                (1.0 - err) + err * afreq + background
+            } else {
+                err * afreq + background
+            };
+
+            sprob_all[i] *= emi;
+        }
+    }
+
     for b in 0..blocks.len() {
         let block = &blocks[b];
 
@@ -189,8 +214,8 @@ fn impute_chunk(chunk_id: usize) -> Vec<f64> {
         let mut sprob_norecom = sprob.to_vec();
 
         // Walk
-        for j in 0..block.nvar {
-            let rec = block.rprob[j];
+        for j in 1..block.nvar {
+            let rec = block.rprob[j-1];
             // TODO: for some reason minimac ignores error prob in input m3vcf
             //       and always uses 0.00999 as below. need to investigate further
             //let err = block.eprob[j];
@@ -204,34 +229,32 @@ fn impute_chunk(chunk_id: usize) -> Vec<f64> {
             let background = 1e-5;
 
             // Transition
-            if j > 0 {
-                let mut sprob_tot = 0.0;
+            let mut sprob_tot = 0.0;
+            for i in 0..block.nuniq {
+                sprob_tot += sprob[i];
+                sprob_norecom[i] *= 1.0 - rec;
+            }
+
+            sprob_tot *= rec / (m as f64);
+
+            let mut complement = 1.0 - rec;
+            // Lazy normalization (same as minimac)
+            if sprob_tot < 1e-20 { 
+                let scale_factor = 1e10;
+                sprob_tot *= scale_factor;
+                complement *= scale_factor;
                 for i in 0..block.nuniq {
-                    sprob_tot += sprob[i];
-                    sprob_norecom[i] *= 1.0 - rec;
-                }
-
-                sprob_tot *= rec / (m as f64);
-
-                let mut complement = 1.0 - rec;
-                // Lazy normalization (same as minimac)
-                if sprob_tot < 1e-20 { 
-                    let scale_factor = 1e10;
-                    sprob_tot *= scale_factor;
-                    complement *= scale_factor;
-                    for i in 0..block.nuniq {
-                        sprob_norecom[i] *= scale_factor;
-                    }
-                }
-
-                for i in 0..block.nuniq {
-                    sprob[i] = complement * sprob[i]
-                        + (block.clustsize[i] as f64) * sprob_tot;
+                    sprob_norecom[i] *= scale_factor;
                 }
             }
 
+            for i in 0..block.nuniq {
+                sprob[i] = complement * sprob[i]
+                    + (block.clustsize[i] as f64) * sprob_tot;
+            }
+
             // Emission
-            if tsym != -1 && (j > 0 || b == 0) {
+            if tsym != -1 {
                 for i in 0..block.nuniq {
 
                     let emi = if tsym == block.rhap[[j,i]] {
@@ -428,10 +451,10 @@ fn main() -> std::io::Result<()> {
 
     let imputed: Vec<f64> = impute_chunk(0);
 
-    let mut file = File::create("test_rust.dose.txt")?;
+    let mut file = File::create(OUTPUT_FILE)?;
     writeln!(file, "{}", imputed.iter().map(|n| n.to_string()).collect::<Vec<String>>().join("\n"))?;
 
-    println!("Imputation result written to test_rust.dose.txt");
+    println!("Imputation result written to {}", OUTPUT_FILE);
 
     Ok(())
 }
