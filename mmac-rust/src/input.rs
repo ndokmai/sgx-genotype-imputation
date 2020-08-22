@@ -1,3 +1,4 @@
+use ndarray::Array1;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -7,7 +8,7 @@ use std::path::Path;
 /// imputed independently
 /// TODO: chunk_id is currently ignored
 /// and the entire toy data is loaded
-pub fn load_chunk_from_input(_chunk_id: usize, input_path: &Path) -> Vec<i8> {
+pub fn load_chunk_from_input(_chunk_id: usize, input_path: &Path) -> Array1<i8> {
     //let n = 97020; // TODO: hardcoded variant count
     let f = File::open(input_path).expect("Unable to open input file");
     let f = BufReader::new(f);
@@ -19,5 +20,5 @@ pub fn load_chunk_from_input(_chunk_id: usize, input_path: &Path) -> Vec<i8> {
                 .expect("Parsing error in input file")
         })
         .collect::<Vec<_>>();
-    x
+    Array1::from(x)
 }

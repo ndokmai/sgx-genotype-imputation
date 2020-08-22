@@ -1,18 +1,18 @@
-use ndarray::Array2;
+use ndarray::{Array1, Array2};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Result};
 use std::path::Path;
 
 #[derive(PartialEq, Debug)]
 pub struct Block {
-    pub indmap: Vec<usize>,
+    pub indmap: Array1<usize>,
     pub nvar: usize,
     pub nuniq: usize,
-    pub clustsize: Vec<usize>,
+    pub clustsize: Array1<f64>,
     pub rhap: Array2<i8>,
-    pub eprob: Vec<f64>,
-    pub rprob: Vec<f64>,
-    pub afreq: Vec<f64>,
+    pub eprob: Array1<f64>,
+    pub rprob: Array1<f64>,
+    pub afreq: Array1<f64>,
 }
 
 impl Block {
@@ -43,7 +43,7 @@ impl Block {
             .map(|s| s.parse::<usize>().unwrap())
             .collect::<Vec<_>>();
 
-        let mut clustsize = vec![0usize; nuniq];
+        let mut clustsize = Array1::<usize>::zeros(nuniq);
         indmap.iter().for_each(|&v| clustsize[v] += 1);
 
         let mut eprob = Vec::<f64>::with_capacity(nvar);
@@ -91,14 +91,14 @@ impl Block {
         }
 
         Self {
-            indmap,
+            indmap: Array1::from(indmap),
             nvar,
             nuniq,
-            clustsize,
+            clustsize: Array1::from(clustsize.into_iter().map(|&v| v as f64).collect::<Vec<_>>()),
             rhap,
-            eprob,
-            rprob,
-            afreq,
+            eprob: Array1::from(eprob),
+            rprob: Array1::from(rprob),
+            afreq: Array1::from(afreq),
         }
     }
 }
