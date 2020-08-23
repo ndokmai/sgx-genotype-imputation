@@ -7,10 +7,10 @@ const REF_PANEL_FILE: &'static str = "test_data/largeref.m3vcf";
 const INPUT_FILE: &'static str = "test_data/input.txt";
 const REF_OUTPUT_FILE: &'static str = "test_data/output_ref.txt";
 
-fn load_ref_output() -> Vec<f64> {
+fn load_ref_output() -> Vec<Real> {
     let file = BufReader::new(File::open(REF_OUTPUT_FILE).unwrap());
     file.lines()
-        .map(|line| line.unwrap().parse::<f64>().unwrap())
+        .map(|line| line.unwrap().parse::<Real>().unwrap())
         .collect()
 }
 
@@ -26,5 +26,5 @@ fn integration_test() {
     assert!(imputed
         .into_iter()
         .zip(ref_imputed.into_iter())
-        .all(|(a, b)| (a - b).abs() < f64::EPSILON || (a.is_nan() && b.is_nan())));
+        .all(|(&a, b)| (a - b).abs() < Real::EPSILON || (a.is_nan() && b.is_nan())));
 }

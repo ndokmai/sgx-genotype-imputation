@@ -1,3 +1,4 @@
+use crate::Real;
 use ndarray::{Array1, Array2};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Result};
@@ -8,11 +9,11 @@ pub struct Block {
     pub indmap: Array1<usize>,
     pub nvar: usize,
     pub nuniq: usize,
-    pub clustsize: Array1<f64>,
+    pub clustsize: Array1<Real>,
     pub rhap: Array2<i8>,
-    pub eprob: Array1<f64>,
-    pub rprob: Array1<f64>,
-    pub afreq: Array1<f64>,
+    pub eprob: Array1<Real>,
+    pub rprob: Array1<Real>,
+    pub afreq: Array1<Real>,
 }
 
 impl Block {
@@ -46,10 +47,10 @@ impl Block {
         let mut clustsize = Array1::<usize>::zeros(nuniq);
         indmap.iter().for_each(|&v| clustsize[v] += 1);
 
-        let mut eprob = Vec::<f64>::with_capacity(nvar);
-        let mut rprob = Vec::<f64>::with_capacity(nvar);
+        let mut eprob = Vec::<Real>::with_capacity(nvar);
+        let mut rprob = Vec::<Real>::with_capacity(nvar);
         let mut rhap = Array2::<i8>::zeros((nvar, nuniq));
-        let mut afreq = Vec::<f64>::with_capacity(nvar);
+        let mut afreq = Vec::<Real>::with_capacity(nvar);
 
         // read block data
         for cur_var in 0..nvar {
@@ -64,8 +65,8 @@ impl Block {
             for t in tok {
                 let t = t.split("=").collect::<Vec<_>>();
                 match t[0] {
-                    "Err" => new_eprob = Some(t[1].parse::<f64>().unwrap()),
-                    "Recom" => new_rprob = Some(t[1].parse::<f64>().unwrap()),
+                    "Err" => new_eprob = Some(t[1].parse::<Real>().unwrap()),
+                    "Recom" => new_rprob = Some(t[1].parse::<Real>().unwrap()),
                     _ => continue,
                 }
             }
@@ -87,14 +88,14 @@ impl Block {
                     alt_count += clustsize[ind];
                 }
             });
-            afreq.push(alt_count as f64 / m as f64);
+            afreq.push(Real::from(alt_count as u32) / Real::from(m as u32));
         }
 
         Self {
             indmap: Array1::from(indmap),
             nvar,
             nuniq,
-            clustsize: Array1::from(clustsize.into_iter().map(|&v| v as f64).collect::<Vec<_>>()),
+            clustsize: Array1::from(clustsize.into_iter().map(|&v| (v as u32).into()).collect::<Vec<_>>()),
             rhap,
             eprob: Array1::from(eprob),
             rprob: Array1::from(rprob),
