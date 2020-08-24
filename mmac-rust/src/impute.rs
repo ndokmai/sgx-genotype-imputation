@@ -228,7 +228,7 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
             imputed[varind] = p1 / (p1 + p0);
 
             // Emission
-            if tsym > -1 {
+            if tsym != -1 {
                 // not missing
                 Zip::from(&mut sprob)
                     .and(&mut sprob_norecom)
@@ -250,7 +250,7 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
             let mut complement: Real = Real::from(1.0) - rec;
 
             // Lazy normalization (same as minimac)
-            if sprob_tot < NORM_THRESHOLD || cfg!(features = "leak-resistant") {
+            if sprob_tot < NORM_THRESHOLD {
                 sprob_tot *= NORM_SCALE_FACTOR;
                 complement *= NORM_SCALE_FACTOR;
                 sprob_norecom *= NORM_SCALE_FACTOR;

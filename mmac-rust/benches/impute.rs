@@ -3,7 +3,7 @@ use mmac::*;
 use std::path::Path;
 
 const REF_PANEL_FILE: &'static str = "test_data/largeref.m3vcf";
-const INPUT_FILE: &'static str = "test_data/input.txt";
+const INPUT_FILE: &'static str = "test_data/large_input.txt";
 
 pub fn impute_bench(c: &mut Criterion) {
     let chunk_id = 0;

@@ -3,9 +3,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-const REF_PANEL_FILE: &'static str = "test_data/largeref.m3vcf";
-const INPUT_FILE: &'static str = "test_data/input.txt";
-const REF_OUTPUT_FILE: &'static str = "test_data/output_ref.txt";
+const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf";
+const INPUT_FILE: &'static str = "test_data/small_input.txt";
+const REF_OUTPUT_FILE: &'static str = "test_data/small_output_ref.txt";
 
 fn load_ref_output() -> Vec<Real> {
     let file = BufReader::new(File::open(REF_OUTPUT_FILE).unwrap());
