@@ -8,29 +8,45 @@ mod cons {
     pub const __BACKGROUND: f64 = 1e-5;
     pub const __NORM_THRESHOLD: f64 = 1e-20;
     pub const __NORM_SCALE_FACTOR: f64 = 1e10;
+    pub const __ZERO: f64 = 0f64;
+    pub const __ONE: f64 = 1f64;
+    pub const __E: f64 = 1e-30;
 }
 
 #[cfg(feature = "leak-resistant")]
 mod cons {
+    use ftfp::Fixed;
     pub const __BACKGROUND: f64 = 1e-5;
     pub const __NORM_THRESHOLD: f64 = 1e-10;
     pub const __NORM_SCALE_FACTOR: f64 = 1e5;
+    pub const __ZERO: Fixed = Fixed::ZERO;
+    pub const __ONE: f64 = 1f64; 
+    pub const __E: f64 = 1e-30;
 }
 
 lazy_static!{
     static ref _BACKGROUND: Real = cons::__BACKGROUND.into();
     static ref _NORM_THRESHOLD: Real = cons::__NORM_THRESHOLD.into();
     static ref _NORM_SCALE_FACTOR: Real = cons::__NORM_SCALE_FACTOR.into();
+    static ref _ONE: Real = cons::__ONE.into();
+    static ref _E: Real = cons::__E.into();
 }
 
 #[allow(non_snake_case)]
 pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel) -> Array1<Real> {
+    assert!(thap.len()==ref_panel.n_markers);
+
+    // Put all constants on stack
+    let ZERO = cons::__ZERO; 
+    let ONE = *_ONE;
     let BACKGROUND = *_BACKGROUND;
     let NORM_THRESHOLD = *_NORM_THRESHOLD;
     let NORM_SCALE_FACTOR = *_NORM_SCALE_FACTOR;
+    let E = *_E;
 
     let blocks = &ref_panel.blocks;
     let m = ref_panel.n_haps;
+    let m_real: Real = (m as u32).into();
 
     let mut imputed = Array1::<Real>::zeros(thap.len());
 
@@ -51,14 +67,14 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
         let afreq = if tsym == 1 {
             block.afreq[0]
         } else {
-            Real::from(1.0) - block.afreq[0]
+            ONE - block.afreq[0]
         };
 
         Zip::from(&mut sprob_all)
             .and(&block.indmap)
             .apply(|p, &ind| {
                 let emi = if tsym == block.rhap[[0, ind]] {
-                    (Real::from(1.0) - err) + err * afreq + BACKGROUND
+                    (ONE - err) + err * afreq + BACKGROUND
                 } else {
                     err * afreq + BACKGROUND
                 };
@@ -99,13 +115,13 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
                     let afreq = if tsym == 1 {
                         block_afreq
                     } else {
-                        Real::from(1.0) - block_afreq
+                        ONE - block_afreq
                     };
 
                     // Transition
-                    let mut sprob_tot = sprob.iter().sum::<Real>() * (rec / Real::from(m as u32));
-                    sprob_norecom *= Real::from(1.0) - rec;
-                    let mut complement = Real::from(1.0) - rec;
+                    let mut sprob_tot = sprob.iter().sum::<Real>() * (rec / m_real);
+                    sprob_norecom *= ONE - rec;
+                    let mut complement = ONE - rec;
 
                     // Lazy normalization (same as minimac)
                     if sprob_tot < NORM_THRESHOLD {
@@ -123,7 +139,7 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
                             .and(&rhap_row)
                             .apply(|p, p_norecom, &rhap| {
                                 let emi = if tsym == rhap {
-                                    (Real::from(1.0) - err) + err * afreq + BACKGROUND
+                                    (ONE - err) + err * afreq + BACKGROUND
                                 } else {
                                     err * afreq + BACKGROUND
                                 };
@@ -139,7 +155,7 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
             );
 
         let mut sprob_recom = &sprob - &sprob_norecom;
-        sprob_recom.iter_mut().for_each(|p| *p = p.max(0.0.into()));
+        sprob_recom.iter_mut().for_each(|p| *p = p.max(ZERO));
 
         // Unfold probabilities
         if b < blocks.len() - 1 {
@@ -149,7 +165,7 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
                 .apply(|p, &ui| {
                     // TODO: precompute ui terms outside of this for loop
                     *p = (sprob_recom[ui] / block.clustsize[ui])
-                        + (*p * (sprob_norecom[ui] / (sprob_first[ui] + Real::from(1e-30))));
+                        + (*p * (sprob_norecom[ui] / (sprob_first[ui] + E)));
                 });
         }
 
@@ -201,19 +217,19 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
             let afreq = if tsym == 1 {
                 block.afreq[j]
             } else {
-                Real::from(1.0) - block.afreq[j]
+                ONE - block.afreq[j]
             };
 
             // Impute
             let combined = &jprob
                 * &(&fwdprob_norecom.slice(s![j, ..]) * &sprob_norecom
-                    / (fwdprob_first * &sprob_first + Real::from(1e-30)))
+                    / (fwdprob_first * &sprob_first + E))
                 + (&fwdprob.slice(s![j, ..]) * &sprob
                     - &fwdprob_norecom.slice(s![j, ..]) * &sprob_norecom)
                     / &block.clustsize;
 
             let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![j, ..])).fold(
-                (Real::from(0f64), Real::from(0f64)),
+                (ZERO, ZERO),
                 |mut acc, &c, &rsym| {
                     if rsym == 1 {
                         acc.1 += c;
@@ -235,7 +251,7 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
                     .and(block.rhap.slice(s![j, ..]))
                     .apply(|p, p_norecom, &rhap| {
                         let emi = if tsym == rhap {
-                            (Real::from(1.0) - err) + err * afreq + BACKGROUND
+                            (ONE - err) + err * afreq + BACKGROUND
                         } else {
                             err * afreq + BACKGROUND
                         };
@@ -245,9 +261,9 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
             }
 
             // Transition
-            let mut sprob_tot = sprob.iter().sum::<Real>() * (rec / Real::from(m as u32));
-            sprob_norecom *= Real::from(1.0) - rec;
-            let mut complement: Real = Real::from(1.0) - rec;
+            let mut sprob_tot = sprob.iter().sum::<Real>() * (rec / m_real);
+            sprob_norecom *= ONE - rec;
+            let mut complement: Real = ONE - rec;
 
             // Lazy normalization (same as minimac)
             if sprob_tot < NORM_THRESHOLD {
@@ -262,13 +278,13 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
             if b == 0 && j == 1 {
                 let combined = &jprob
                     * &(&fwdprob_norecom.slice(s![0, ..]) * &sprob_norecom
-                        / (fwdprob_first * &sprob_first + Real::from(1e-30)))
+                        / (fwdprob_first * &sprob_first + E))
                     + (&fwdprob.slice(s![0, ..]) * &sprob
                         - &fwdprob_norecom.slice(s![0, ..]) * &sprob_norecom)
                         / &block.clustsize;
 
                 let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![0, ..])).fold(
-                    (Real::from(0f64), Real::from(0f64)),
+                    (ZERO, ZERO),
                     |mut acc, &c, &rsym| {
                         if rsym == 1 {
                             acc.1 += c;
@@ -285,7 +301,7 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
         }
 
         let mut sprob_recom = &sprob - &sprob_norecom;
-        sprob_recom.iter_mut().for_each(|p| *p = p.max(0.0.into()));
+        sprob_recom.iter_mut().for_each(|p| *p = p.max(ZERO));
 
         // Unfold probabilities
         if b > 0 {
@@ -293,7 +309,7 @@ pub fn impute_chunk(_chunk_id: usize, thap: ArrayView1<i8>, ref_panel: &RefPanel
                 .and(&block.indmap)
                 .apply(|p, &ui| {
                     *p = (sprob_recom[ui] / block.clustsize[ui])
-                        + (*p * (sprob_norecom[ui] / (sprob_first[ui] + Real::from(1e-30))));
+                        + (*p * (sprob_norecom[ui] / (sprob_first[ui] + E)));
                 });
         }
 

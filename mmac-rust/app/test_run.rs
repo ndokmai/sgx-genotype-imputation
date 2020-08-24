@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Instant;
 use std::writeln;
 
-const REF_FILE: &'static str = "largeref.m3vcf";
+const REF_FILE: &'static str = "test_data/largeref.m3vcf";
 const INPUT_FILE: &'static str = "input.txt";
 const OUTPUT_FILE: &'static str = "output.txt";
 
