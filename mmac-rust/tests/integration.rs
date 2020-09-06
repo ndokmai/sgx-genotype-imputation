@@ -7,10 +7,15 @@ const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf";
 const INPUT_FILE: &'static str = "test_data/small_input.txt";
 const REF_OUTPUT_FILE: &'static str = "test_data/small_output_ref.txt";
 
-fn load_ref_output() -> Vec<Real> {
+#[cfg(not(feature = "leak-resistant"))]
+const EPSILON: f64 = f64::EPSILON;
+#[cfg(feature = "leak-resistant")]
+const EPSILON: f64 = 1e-10;
+
+fn load_ref_output() -> Vec<f64> {
     let file = BufReader::new(File::open(REF_OUTPUT_FILE).unwrap());
     file.lines()
-        .map(|line| line.unwrap().parse::<Real>().unwrap())
+        .map(|line| line.unwrap().parse::<f64>().unwrap())
         .collect()
 }
 
@@ -26,5 +31,10 @@ fn integration_test() {
     assert!(imputed
         .into_iter()
         .zip(ref_imputed.into_iter())
-        .all(|(&a, b)| (a - b).abs() < Real::EPSILON || (a.is_nan() && b.is_nan())));
+        .all(|(&a, b)| {
+            let a: f64 = a.into();
+            println!("a = {}", a);
+            println!("b = {}", b);
+            (a - b).abs() < EPSILON || (a.is_nan() && b.is_nan())
+        }));
 }

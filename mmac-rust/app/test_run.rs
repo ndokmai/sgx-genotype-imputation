@@ -44,12 +44,12 @@ fn main() {
         file,
         "{}",
         imputed
-        .iter()
-        .map(|n| n.to_string())
-        .collect::<Vec<String>>()
-        .join("\n")
-        )
-        .unwrap();
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<String>>()
+            .join("\n")
+    )
+    .unwrap();
 
     eprintln!("Imputation result written to {}", OUTPUT_FILE);
 }
