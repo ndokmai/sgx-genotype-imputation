@@ -116,17 +116,25 @@ pub fn impute_chunk(
         let mut fwdprob_norecom = Array2::<Real>::zeros((block.nvar, block.nuniq));
 
         // Fold probabilities
-        let mut sprob = Array1::<Real>::zeros(block.nuniq);
 
         #[cfg(not(feature = "leak-resistant"))]
-        for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-            sprob[ind] += p;
-        }
+        let mut sprob = {
+            let mut sprob = Array1::<Real>::zeros(block.nuniq);
+            for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
+                sprob[ind] += p;
+            }
+            sprob
+        };
 
         #[cfg(feature = "leak-resistant")]
-        for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-            sprob[ind] = sprob[ind].safe_add(p);
-        }
+        let mut sprob = {
+            let mut sprob: Vec<Option<Real>> = vec![None; block.nuniq];
+            for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
+                let target = &mut sprob[ind];
+                *target = Some(target.map_or(p, |v| v + p));
+            }
+            Array1::from(sprob.into_iter().map(|v| v.unwrap()).collect::<Vec<Real>>())
+        };
 
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
@@ -244,34 +252,50 @@ pub fn impute_chunk(
 
         // Precompute joint fwd-bwd term for imputation;
         // same as "Constants" variable in minimac
-        let mut jprob = Array1::<Real>::zeros(block.nuniq);
         #[cfg(not(feature = "leak-resistant"))]
-        Zip::from(&block.indmap)
-            .and(fwdcache_all.slice(s![b, ..]))
-            .and(&sprob_all)
-            .apply(|&ind, &c, &p| {
-                jprob[ind] += c * p;
-            });
+        let jprob = {
+            let mut jprob = Array1::<Real>::zeros(block.nuniq);
+            Zip::from(&block.indmap)
+                .and(fwdcache_all.slice(s![b, ..]))
+                .and(&sprob_all)
+                .apply(|&ind, &c, &p| {
+                    jprob[ind] += c * p;
+                });
+            jprob
+        };
+
         #[cfg(feature = "leak-resistant")]
-        Zip::from(&block.indmap)
-            .and(fwdcache_all.slice(s![b, ..]))
-            .and(&sprob_all)
-            .apply(|&ind, &c, &p| {
-                jprob[ind] = jprob[ind].safe_add(c * p);
-            });
+        let jprob = {
+            let mut jprob: Vec<Option<Real>> = vec![None; block.nuniq];
+            Zip::from(&block.indmap)
+                .and(fwdcache_all.slice(s![b, ..]))
+                .and(&sprob_all)
+                .apply(|&ind, &c, &p| {
+                    let target = &mut jprob[ind];
+                    *target = Some(target.map_or(c * p, |v| v + c * p));
+                });
+            Array1::from(jprob.into_iter().map(|v| v.unwrap()).collect::<Vec<Real>>())
+        };
 
         // Fold probabilities
-        let mut sprob = Array1::<Real>::zeros(block.nuniq);
-
         #[cfg(not(feature = "leak-resistant"))]
-        for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-            sprob[ind] += p;
-        }
+        let mut sprob = {
+            let mut sprob = Array1::<Real>::zeros(block.nuniq);
+            for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
+                sprob[ind] += p;
+            }
+            sprob
+        };
 
         #[cfg(feature = "leak-resistant")]
-        for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-            sprob[ind] = sprob[ind].safe_add(p);
-        }
+        let mut sprob = {
+            let mut sprob: Vec<Option<Real>> = vec![None; block.nuniq];
+            for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
+                let target = &mut sprob[ind];
+                *target = Some(target.map_or(p, |v| v + p));
+            }
+            Array1::from(sprob.into_iter().map(|v| v.unwrap()).collect::<Vec<Real>>())
+        };
 
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
@@ -293,10 +317,10 @@ pub fn impute_chunk(
                     + (&fwdprob.slice(s![j, ..]) * &sprob - x) / &block.clustsize
             };
 
+            #[cfg(not(feature = "leak-resistant"))]
             let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![j, ..])).fold(
                 (ZERO, ZERO),
                 |mut acc, &c, &rsym| {
-                    #[cfg(not(feature = "leak-resistant"))]
                     if rsym == 1 {
                         acc.1 += c;
                         acc
@@ -304,17 +328,25 @@ pub fn impute_chunk(
                         acc.0 += c;
                         acc
                     }
-
-                    #[cfg(feature = "leak-resistant")]
-                    if rsym == 1 {
-                        acc.1 = acc.1.safe_add(c);
-                        acc
-                    } else {
-                        acc.0 = acc.0.safe_add(c);
-                        acc
-                    }
                 },
             );
+
+            #[cfg(feature = "leak-resistant")]
+            let (p0, p1) = {
+                let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![j, ..])).fold(
+                    (None, None),
+                    |mut acc, &c, &rsym| {
+                        if rsym == 1 {
+                            acc.1 = Some(acc.1.map_or(c, |v| v + c));
+                            acc
+                        } else {
+                            acc.0 = Some(acc.0.map_or(c, |v| v + c));
+                            acc
+                        }
+                    },
+                );
+                (p0.unwrap(), p1.unwrap())
+            };
 
             imputed[varind] = p1 / (p1 + p0);
 
@@ -407,8 +439,6 @@ pub fn impute_chunk(
                     )
                 };
 
-                //println!("combined = {:?}", combined);
-                //
                 let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![0, ..])).fold(
                     (ZERO, ZERO),
                     |mut acc, &c, &rsym| {

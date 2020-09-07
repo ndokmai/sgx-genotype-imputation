@@ -2,8 +2,8 @@
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;
 use std::marker::PhantomData;
-use typenum::marker_traits::Unsigned;
 use timing_shield::{TpI64, TpOrd};
+use typenum::marker_traits::Unsigned;
 
 // NLS approximation parameters
 const NLS_N_SPLIT: usize = 4;
@@ -56,7 +56,9 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
     pub fn max(self, other: Self) -> Self {
         let self_inner = TpI64::protect(self.inner);
         let other_inner = TpI64::protect(other.inner);
-        let res = self_inner.tp_gt(&other_inner).select(self_inner, other_inner);
+        let res = self_inner
+            .tp_gt(&other_inner)
+            .select(self_inner, other_inner);
         new_self!(res.expose())
     }
 
