@@ -33,6 +33,47 @@ lazy_static! {
     static ref _E: Real = cons::__E.into();
 }
 
+// Balanced accumulator
+pub struct Bacc {
+    acc: Vec<Option<Real>>,
+}
+
+impl Bacc {
+    pub fn new() -> Bacc {
+        Bacc { acc: Vec::new() }
+    }
+
+    pub fn add(&mut self, val: Real) {
+        let mut val = Some(val);
+        for slot in self.acc.iter_mut() {
+            if slot.is_some() {
+                val.replace(slot.take().unwrap() + val.unwrap());
+            } else {
+                slot.replace(val.take().unwrap());
+                break;
+            }
+        }
+
+        if val.is_some() {
+            self.acc.push(val);
+        }
+    }
+
+    pub fn result(&self) -> Option<Real> {
+        let mut total: Option<Real> = None;
+        for slot in self.acc.iter() {
+            if slot.is_some() {
+                if total.is_some() {
+                    total.replace(slot.unwrap() + total.unwrap());
+                } else {
+                    total.replace(slot.unwrap());
+                }
+            }
+        }
+        total
+    }
+}
+
 #[allow(non_snake_case)]
 pub fn impute_chunk(
     _chunk_id: usize,
@@ -156,7 +197,11 @@ pub fn impute_chunk(
                     let rec_real: Real = rec.into();
 
                     // Transition
-                    let mut sprob_tot = sprob.iter().sum::<Real>() * (rec_real / m_real);
+                    let mut sprob_tot = Bacc::new();
+                    for val in sprob.iter() {
+                        sprob_tot.add(*val);
+                    }
+                    let mut sprob_tot = sprob_tot.result().unwrap() * (rec_real / m_real);
                     sprob_norecom *= Real::from(1. - rec);
                     let mut complement: Real = (1. - rec).into();
 
@@ -396,7 +441,11 @@ pub fn impute_chunk(
             let rec_real: Real = rec.into();
 
             // Transition
-            let mut sprob_tot = sprob.iter().sum::<Real>() * (rec_real / m_real);
+            let mut sprob_tot = Bacc::new();
+            for val in sprob.iter() {
+                sprob_tot.add(*val);
+            }
+            let mut sprob_tot = sprob_tot.result().unwrap() * (rec_real / m_real);
             sprob_norecom *= Real::from(1. - rec);
             let mut complement: Real = (1. - rec).into();
 
