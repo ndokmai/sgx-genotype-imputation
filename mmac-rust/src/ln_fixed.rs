@@ -1,7 +1,9 @@
+#![allow(dead_code)]
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;
 use std::marker::PhantomData;
 use typenum::marker_traits::Unsigned;
+use timing_shield::{TpI64, TpOrd};
 
 // NLS approximation parameters
 const NLS_N_SPLIT: usize = 4;
@@ -47,57 +49,102 @@ pub struct LnFixed<F: Unsigned> {
 impl<F: Unsigned> LnFixed<F> {
     pub const ZERO: Self = new_self!(i64::MIN);
     pub const ONE: Self = new_self!(0);
-    pub const EPSILON: Self = new_self!(-16);
+    pub const NAN: Self = new_self!(i64::MAX);
 }
 
 impl<F: Unsigned + PartialOrd> LnFixed<F> {
-    //TODO: must be leak resistant
     pub fn max(self, other: Self) -> Self {
-        new_self!(self.inner.max(other.inner))
+        let self_inner = TpI64::protect(self.inner);
+        let other_inner = TpI64::protect(other.inner);
+        let res = self_inner.tp_gt(&other_inner).select(self_inner, other_inner);
+        new_self!(res.expose())
     }
 
     pub fn is_zero(self) -> bool {
         Self::is_zero_inner(self.inner)
     }
 
+    pub fn is_nan(self) -> bool {
+        self == Self::NAN
+    }
+
+    pub fn from_f64_no_ln(f: f64) -> Self {
+        Self::from_f64_inner(f)
+    }
+
+    #[inline]
+    pub fn safe_add(self, other: Self) -> Self {
+        if self.is_zero() {
+            return other;
+        }
+        if other.is_zero() {
+            return self;
+        }
+        debug_assert!(!(self.is_zero() && other.is_zero()));
+        self + other
+    }
+
+    #[inline]
+    pub fn safe_sub(self, other: Self) -> Self {
+        if self.is_zero() {
+            return Self::ZERO;
+        }
+        if other.is_zero() {
+            return self;
+        }
+        debug_assert!(!(self.is_zero() && other.is_zero()));
+        self - other
+    }
+
+    #[inline]
+    pub fn safe_mul(self, other: Self) -> Self {
+        if self.is_zero() || other.is_zero() {
+            return Self::ZERO;
+        }
+        self * other
+    }
+
+    #[inline]
+    pub fn safe_div(self, other: Self) -> Self {
+        if other.is_zero() {
+            return Self::NAN;
+        }
+        if self.is_zero() {
+            return Self::ZERO;
+        }
+        self / other
+    }
+
     fn is_zero_inner(a: i64) -> bool {
-        a < Self::EPSILON.inner
+        a == Self::ZERO.inner
+    }
+
+    /// lme(a, b) = ln(exp(a) + exp(b))
+    /// TODO fix this
+    fn lse(a: i64, b: i64) -> i64 {
+        debug_assert!(!Self::is_zero_inner(a));
+        debug_assert!(!Self::is_zero_inner(b));
+        Self::from(Into::<f64>::into(new_self!(a)) + Into::<f64>::into(new_self!(b))).inner
     }
 
     /// lse(a, b) = ln(exp(a) + exp(b))
-    fn lse(a: i64, b: i64) -> i64 {
-        if Self::is_zero_inner(a) {
-            if Self::is_zero_inner(b) {
-                panic!("attempt to take ln of zero")
-            } else {
-                return b;
-            }
-        } else {
-            if Self::is_zero_inner(b) {
-                return a;
-            }
-        }
-
+    fn _lse(a: i64, b: i64) -> i64 {
+        debug_assert!(!Self::is_zero_inner(a));
+        debug_assert!(!Self::is_zero_inner(b));
         let flag = (a >= b) as i64;
         let max_val = a * flag + b * (1 - flag);
-        let diff = 2 * max_val - a - b;
+        let diff = match max_val.checked_mul(2) {
+            Some(diff) => diff - a - b,
+            None => return 0,
+        };
         max_val + Self::nls(diff)
     }
 
     /// lme(a, b) = ln(exp(a) - exp(b))
     /// TODO fix this
     fn lme(a: i64, b: i64) -> i64 {
-        if Self::is_zero_inner(a) {
-            if Self::is_zero_inner(b) {
-                panic!("attempt to take ln of zero")
-            } else {
-                panic!("attempt to take ln of negative number")
-            }
-        } else {
-            if Self::is_zero_inner(b) {
-                return a;
-            }
-        }
+        debug_assert!(!Self::is_zero_inner(a));
+        debug_assert!(!Self::is_zero_inner(b));
         Self::from(Into::<f64>::into(new_self!(a)) - Into::<f64>::into(new_self!(b))).inner
     }
 
@@ -105,6 +152,7 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
     /// Restricted to the positive domain (a >= 0)
     /// Approximation level can be adjusted
     fn nls(a: i64) -> i64 {
+        debug_assert!(!Self::is_zero_inner(a));
         let mut x = a;
         let mut step = Self::from_i64_inner(NLS_MAX_INPUT as i64 / 2).inner;
         let mut pos_flags = [0i64; NLS_N_SPLIT];
@@ -136,7 +184,10 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
         let mut res = coeffs[0] + ((a * coeffs[1]) >> F::USIZE);
         let mut self_pow = a;
         for &c in coeffs.iter().skip(2) {
-            self_pow = (self_pow * a) >> F::USIZE;
+            self_pow = match self_pow.checked_mul(a) {
+                Some(r) => r >> F::USIZE,
+                None => return 0,
+            };
             res += (self_pow * c) >> F::USIZE;
         }
         res
@@ -187,8 +238,14 @@ impl<F: Unsigned> From<f64> for LnFixed<F> {
     }
 }
 
-impl<F: Unsigned> Into<f64> for LnFixed<F> {
+impl<F: Unsigned + PartialOrd> Into<f64> for LnFixed<F> {
     fn into(self) -> f64 {
+        if self.is_zero() {
+            return 0.;
+        }
+        if self.is_nan() {
+            return f64::NAN;
+        }
         (self.inner as f64 / (F::USIZE as f64).exp2()).exp()
     }
 }
@@ -200,6 +257,10 @@ macro_rules! num_op {
                 type Output = Self;
                 #[inline]
                 fn $op_name(self, other: Self) -> Self {
+                    debug_assert!(!self.is_zero());
+                    debug_assert!(!other.is_zero());
+                    debug_assert!(!self.is_nan());
+                    debug_assert!(!other.is_nan());
                     new_self!($op(self.inner, other.inner))
                 }
             }
@@ -207,6 +268,10 @@ macro_rules! num_op {
             impl<F: Unsigned + PartialOrd> std::ops::[<$trt Assign>] for LnFixed<F> {
                 #[inline]
                 fn [<$op_name _assign>](&mut self, other: Self) {
+                    debug_assert!(!self.is_zero());
+                    debug_assert!(!other.is_zero());
+                    debug_assert!(!self.is_nan());
+                    debug_assert!(!other.is_nan());
                     self.inner = $op(self.inner, other.inner);
                 }
             }
@@ -219,10 +284,9 @@ macro_rules! num_op {
                     {
                         type Output = Array<LnFixed<F>, D>;
                         fn $op_name(self, rhs: &ArrayBase<S, D>) -> Self::Output {
-                            let mut out = Self::Output::zeros(rhs.dim());
+                            let mut out = rhs.to_owned();
                             Zip::from(&mut out)
-                                .and(rhs)
-                                .apply(|o, &r| { o.inner = $op(self.inner, r.inner) });
+                                .apply(|o| { o.inner = $op(o.inner, self.inner) });
                             out
                         }
                     }
@@ -235,7 +299,7 @@ num_op!(Self::lme, Sub, sub);
 num_op!(std::ops::Add::add, Mul, mul);
 num_op!(std::ops::Sub::sub, Div, div);
 
-impl<F: Unsigned> std::fmt::Display for LnFixed<F> {
+impl<F: Unsigned + PartialOrd> std::fmt::Display for LnFixed<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let i: f64 = (*self).into();
         i.fmt(f)

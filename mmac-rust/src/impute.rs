@@ -1,10 +1,12 @@
+#[cfg(feature = "leak-resistant")]
+use crate::const_time;
 use crate::ref_panel::RefPanel;
 use crate::{Input, Real};
 use lazy_static::lazy_static;
 use ndarray::{s, Array1, Array2, ArrayView1, Zip};
 use std::convert::TryFrom;
 #[cfg(feature = "leak-resistant")]
-use timing_shield::{TpBool, TpEq, TpU64};
+use timing_shield::TpEq;
 
 pub const BACKGROUND: f64 = 1e-5;
 
@@ -29,24 +31,6 @@ lazy_static! {
     static ref _NORM_THRESHOLD: Real = cons::__NORM_THRESHOLD.into();
     static ref _NORM_SCALE_FACTOR: Real = cons::__NORM_SCALE_FACTOR.into();
     static ref _E: Real = cons::__E.into();
-}
-
-#[inline]
-#[cfg(feature = "leak-resistant")]
-fn const_time_select(cond: TpBool, a: f64, b: f64) -> f64 {
-    #[inline]
-    fn f64_to_u64(x: f64) -> u64 {
-        unsafe { *(&x as *const f64 as *const u64) }
-    }
-    #[inline]
-    fn u64_to_f64(x: u64) -> f64 {
-        unsafe { *(&x as *const u64 as *const f64) }
-    }
-
-    u64_to_f64(
-        cond.select(TpU64::protect(f64_to_u64(a)), TpU64::protect(f64_to_u64(b)))
-            .expose(),
-    )
 }
 
 #[allow(non_snake_case)]
@@ -79,10 +63,11 @@ pub fn impute_chunk(
     let mut var_offset: usize = 0;
 
     // First position emission (edge case)
-    // TODO: fix this leakage
     #[cfg(not(feature = "leak-resistant"))]
     let cond = thap[0] != -1;
+
     #[cfg(feature = "leak-resistant")]
+    // TODO: fix this leakage
     let cond = thap[0].expose() != -1;
 
     if cond {
@@ -97,24 +82,25 @@ pub fn impute_chunk(
             1. - block.afreq[0]
         };
 
-        #[cfg(feature = "leak-resistant")]
-        let afreq = const_time_select(tsym.tp_eq(&1), block.afreq[0], 1. - block.afreq[0]);
-
         Zip::from(&mut sprob_all)
             .and(&block.indmap)
             .apply(|p, &ind| {
                 #[cfg(not(feature = "leak-resistant"))]
-                let emi = if tsym == block.rhap[[0, ind]] {
+                let emi: Real = if tsym == block.rhap[[0, ind]] {
                     (1. - err) + err * afreq + BACKGROUND
                 } else {
                     err * afreq + BACKGROUND
-                };
+                }
+                .into();
 
                 #[cfg(feature = "leak-resistant")]
-                let emi = const_time_select(
+                let emi: Real = const_time::select_4(
+                    tsym.tp_eq(&1),
                     tsym.tp_eq(&block.rhap[[0, ind]]),
-                    (1. - err) + err * afreq + BACKGROUND,
-                    err * afreq + BACKGROUND,
+                    ((1. - err) + err * block.afreq[0] + BACKGROUND).ln(),
+                    (err * block.afreq[0] + BACKGROUND).ln(),
+                    ((1. - err) + err * (1. - block.afreq[0]) + BACKGROUND).ln(),
+                    (err * (1. - block.afreq[0]) + BACKGROUND).ln(),
                 );
 
                 *p = emi.into();
@@ -131,8 +117,15 @@ pub fn impute_chunk(
 
         // Fold probabilities
         let mut sprob = Array1::<Real>::zeros(block.nuniq);
+
+        #[cfg(not(feature = "leak-resistant"))]
         for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
             sprob[ind] += p;
+        }
+
+        #[cfg(feature = "leak-resistant")]
+        for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
+            sprob[ind] = sprob[ind].safe_add(p);
         }
 
         let sprob_first = sprob.clone();
@@ -151,16 +144,6 @@ pub fn impute_chunk(
                     //       and always uses 0.00999 as below. need to investigate further
                     //let err = block.eprob[j];
                     let err = 0.00999;
-
-                    #[cfg(not(feature = "leak-resistant"))]
-                    let afreq = if tsym == 1 {
-                        block_afreq
-                    } else {
-                        1. - block_afreq
-                    };
-
-                    #[cfg(feature = "leak-resistant")]
-                    let afreq = const_time_select(tsym.tp_eq(&1), block_afreq, 1. - block_afreq);
 
                     let rec_real: Real = rec.into();
 
@@ -187,6 +170,13 @@ pub fn impute_chunk(
                     let cond = tsym.expose() != -1;
 
                     if cond {
+                        #[cfg(not(feature = "leak-resistant"))]
+                        let afreq = if tsym == 1 {
+                            block_afreq
+                        } else {
+                            1. - block_afreq
+                        };
+
                         Zip::from(&mut sprob)
                             .and(&mut sprob_norecom)
                             .and(&rhap_row)
@@ -200,12 +190,14 @@ pub fn impute_chunk(
                                 .into();
 
                                 #[cfg(feature = "leak-resistant")]
-                                let emi: Real = const_time_select(
+                                let emi: Real = const_time::select_4_no_ln(
+                                    tsym.tp_eq(&1),
                                     tsym.tp_eq(&rhap),
-                                    (1. - err) + err * afreq + BACKGROUND,
-                                    err * afreq + BACKGROUND,
-                                )
-                                .into();
+                                    ((1. - err) + err * block_afreq + BACKGROUND).ln(),
+                                    (err * block_afreq + BACKGROUND).ln(),
+                                    ((1. - err) + err * (1. - block_afreq) + BACKGROUND).ln(),
+                                    (err * (1. - block_afreq) + BACKGROUND).ln(),
+                                );
 
                                 *p *= emi;
                                 *p_norecom *= emi;
@@ -253,17 +245,32 @@ pub fn impute_chunk(
         // Precompute joint fwd-bwd term for imputation;
         // same as "Constants" variable in minimac
         let mut jprob = Array1::<Real>::zeros(block.nuniq);
+        #[cfg(not(feature = "leak-resistant"))]
         Zip::from(&block.indmap)
             .and(fwdcache_all.slice(s![b, ..]))
             .and(&sprob_all)
             .apply(|&ind, &c, &p| {
                 jprob[ind] += c * p;
             });
+        #[cfg(feature = "leak-resistant")]
+        Zip::from(&block.indmap)
+            .and(fwdcache_all.slice(s![b, ..]))
+            .and(&sprob_all)
+            .apply(|&ind, &c, &p| {
+                jprob[ind] = jprob[ind].safe_add(c * p);
+            });
 
         // Fold probabilities
         let mut sprob = Array1::<Real>::zeros(block.nuniq);
+
+        #[cfg(not(feature = "leak-resistant"))]
         for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
             sprob[ind] += p;
+        }
+
+        #[cfg(feature = "leak-resistant")]
+        for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
+            sprob[ind] = sprob[ind].safe_add(p);
         }
 
         let sprob_first = sprob.clone();
@@ -279,32 +286,31 @@ pub fn impute_chunk(
             let varind = thap.len() - (var_offset + (block.nvar - j));
             let tsym = thap[varind];
 
-            #[cfg(not(feature = "leak-resistant"))]
-            let afreq = if tsym == 1 {
-                block.afreq[j]
-            } else {
-                1. - block.afreq[j]
-            };
-
-            #[cfg(feature = "leak-resistant")]
-            let afreq = const_time_select(tsym.tp_eq(&1), block.afreq[j], 1. - block.afreq[j]);
-
             // Impute
-            let combined = &jprob
-                * &(&fwdprob_norecom.slice(s![j, ..]) * &sprob_norecom
-                    / (fwdprob_first * &sprob_first + E))
-                + (&fwdprob.slice(s![j, ..]) * &sprob
-                    - &fwdprob_norecom.slice(s![j, ..]) * &sprob_norecom)
-                    / &block.clustsize;
+            let combined = {
+                let x = &fwdprob_norecom.slice(s![j, ..]) * &sprob_norecom;
+                &jprob * &(x.clone() / (fwdprob_first * &sprob_first + E))
+                    + (&fwdprob.slice(s![j, ..]) * &sprob - x) / &block.clustsize
+            };
 
             let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![j, ..])).fold(
                 (ZERO, ZERO),
                 |mut acc, &c, &rsym| {
+                    #[cfg(not(feature = "leak-resistant"))]
                     if rsym == 1 {
                         acc.1 += c;
                         acc
                     } else {
                         acc.0 += c;
+                        acc
+                    }
+
+                    #[cfg(feature = "leak-resistant")]
+                    if rsym == 1 {
+                        acc.1 = acc.1.safe_add(c);
+                        acc
+                    } else {
+                        acc.0 = acc.0.safe_add(c);
                         acc
                     }
                 },
@@ -321,6 +327,12 @@ pub fn impute_chunk(
             let cond = tsym.expose() != -1;
 
             if cond {
+                #[cfg(not(feature = "leak-resistant"))]
+                let afreq = if tsym == 1 {
+                    block.afreq[j]
+                } else {
+                    1. - block.afreq[j]
+                };
                 // not missing
                 Zip::from(&mut sprob)
                     .and(&mut sprob_norecom)
@@ -335,12 +347,14 @@ pub fn impute_chunk(
                         .into();
 
                         #[cfg(feature = "leak-resistant")]
-                        let emi = const_time_select(
+                        let emi: Real = const_time::select_4_no_ln(
+                            tsym.tp_eq(&1),
                             tsym.tp_eq(&rhap),
-                            (1. - err) + err * afreq + BACKGROUND,
-                            err * afreq + BACKGROUND,
-                        )
-                        .into();
+                            ((1. - err) + err * block.afreq[j] + BACKGROUND).ln(),
+                            (err * block.afreq[j] + BACKGROUND).ln(),
+                            ((1. - err) + err * (1. - block.afreq[j]) + BACKGROUND).ln(),
+                            (err * (1. - block.afreq[j]) + BACKGROUND).ln(),
+                        );
 
                         *p *= emi;
                         *p_norecom *= emi;
@@ -365,16 +379,40 @@ pub fn impute_chunk(
 
             // Impute very first position (edge case)
             if b == 0 && j == 1 {
-                let combined = &jprob
-                    * &(&fwdprob_norecom.slice(s![0, ..]) * &sprob_norecom
-                        / (fwdprob_first * &sprob_first + E))
-                    + (&fwdprob.slice(s![0, ..]) * &sprob
-                        - &fwdprob_norecom.slice(s![0, ..]) * &sprob_norecom)
-                        / &block.clustsize;
+                #[cfg(not(feature = "leak-resistant"))]
+                let combined = {
+                    let x = &fwdprob_norecom.slice(s![0, ..]) * &sprob_norecom;
+                    &jprob * &(x.clone() / (fwdprob_first * &sprob_first + E))
+                        + (&fwdprob.slice(s![0, ..]) * &sprob - x) / &block.clustsize
+                };
 
+                #[cfg(feature = "leak-resistant")]
+                let combined = {
+                    let len = jprob.len();
+                    Array1::from(
+                        (0..len)
+                            .map(|i| {
+                                let x =
+                                    fwdprob_norecom.slice(s![0, ..])[i].safe_mul(sprob_norecom[i]);
+                                jprob[i]
+                                    .safe_mul(x.safe_div(fwdprob_first[i] * sprob_first[i] + E))
+                                    .safe_add(
+                                        (fwdprob.slice(s![0, ..])[i]
+                                            .safe_mul(sprob[i])
+                                            .safe_sub(x))
+                                        .safe_div(block.clustsize[i]),
+                                    )
+                            })
+                            .collect::<Vec<Real>>(),
+                    )
+                };
+
+                //println!("combined = {:?}", combined);
+                //
                 let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![0, ..])).fold(
                     (ZERO, ZERO),
                     |mut acc, &c, &rsym| {
+                        #[cfg(not(feature = "leak-resistant"))]
                         if rsym == 1 {
                             acc.1 += c;
                             acc
@@ -382,10 +420,25 @@ pub fn impute_chunk(
                             acc.0 += c;
                             acc
                         }
+
+                        #[cfg(feature = "leak-resistant")]
+                        if rsym == 1 {
+                            acc.1 = acc.1.safe_add(c);
+                            acc
+                        } else {
+                            acc.0 = acc.0.safe_add(c);
+                            acc
+                        }
                     },
                 );
 
-                imputed[0] = p1 / (p1 + p0);
+                #[cfg(not(feature = "leak-resistant"))]
+                let res = p1 / (p1 + p0);
+
+                #[cfg(feature = "leak-resistant")]
+                let res = p1.safe_div(p1.safe_add(p0));
+
+                imputed[0] = res;
             }
         }
 

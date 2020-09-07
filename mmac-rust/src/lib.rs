@@ -1,5 +1,7 @@
 #![feature(const_fn)]
 
+#[cfg(feature = "leak-resistant")]
+mod const_time;
 mod impute;
 mod input;
 mod ref_panel;

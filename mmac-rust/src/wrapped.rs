@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use derive_more::*;
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;

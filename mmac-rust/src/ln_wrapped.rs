@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use derive_more::*;
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;
@@ -8,17 +9,40 @@ pub struct LnWrapped(f64);
 impl LnWrapped {
     pub const ONE: Self = Self(0.);
     pub const ZERO: Self = Self(f64::NEG_INFINITY);
-    //pub const EPSILON: Self = Self(-36.04365338911715); // f64::EPSILON.ln()
+
+    #[inline]
+    pub fn safe_add(self, other: Self) -> Self {
+        self + other
+    }
+
+    #[inline]
+    pub fn safe_sub(self, other: Self) -> Self {
+        self - other
+    }
+
+    #[inline]
+    pub fn safe_mul(self, other: Self) -> Self {
+        self * other
+    }
+
+    #[inline]
+    pub fn safe_div(self, other: Self) -> Self {
+        self / other
+    }
 
     #[inline]
     pub fn is_zero(self) -> bool {
         self.0.is_infinite() & self.0.is_sign_negative()
     }
 
-    //#[inline]
-    //pub fn max(self, other: Self) -> Self {
-    //Self(self.0.max(other.0))
-    //}
+    #[inline]
+    pub fn max(self, other: Self) -> Self {
+        Self(self.0.max(other.0))
+    }
+
+    pub fn from_f64_no_ln(f: f64) -> Self {
+        Self(f)
+    }
 }
 
 macro_rules! num_op {
