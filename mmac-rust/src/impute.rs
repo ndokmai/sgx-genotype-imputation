@@ -221,8 +221,11 @@ pub fn impute_chunk(
             );
 
         let sprob_recom = &sprob - &sprob_norecom;
-        #[cfg(not(feature = "leak-resistant"))]
-        let sprob_norecom = sprob_recom.iter_mut().for_each(|p| *p = (*p).max(0.));
+        //#[cfg(not(feature = "leak-resistant"))]
+        //let sprob_norecom = sprob_recom
+        //.into_iter()
+        //.map(|p| p.max(0.))
+        //.collect::<Vec<_>>();
 
         // Unfold probabilities
         if b < blocks.len() - 1 {
@@ -325,7 +328,7 @@ pub fn impute_chunk(
 
             #[cfg(not(feature = "leak-resistant"))]
             let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![j, ..])).fold(
-                (ZERO, ZERO),
+                (0., 0.),
                 |mut acc, &c, &rsym| {
                     if rsym == 1 {
                         acc.1 += c;
@@ -482,8 +485,13 @@ pub fn impute_chunk(
         }
 
         let sprob_recom = &sprob - &sprob_norecom;
-        #[cfg(not(feature = "leak-resistant"))]
-        let sprob_recom = sprob_recom.iter_mut().for_each(|p| *p = (*p).max(0.));
+
+        //#[cfg(not(feature = "leak-resistant"))]
+        //let sprob_norecom =
+        //sprob_recom
+        //.into_iter()
+        //.map(|p| p.max(0.))
+        //.collect::<Vec<_>>();
 
         // Unfold probabilities
         if b > 0 {
