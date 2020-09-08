@@ -9,6 +9,7 @@ pub struct LnWrapped(f64);
 impl LnWrapped {
     pub const ONE: Self = Self(0.);
     pub const ZERO: Self = Self(f64::NEG_INFINITY);
+    pub const NAN: Self = Self(f64::NAN);
 
     #[inline]
     pub fn safe_add(self, other: Self) -> Self {

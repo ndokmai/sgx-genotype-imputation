@@ -72,8 +72,9 @@ pub struct LnFixed<F: Unsigned> {
 }
 
 impl<F: Unsigned> LnFixed<F> {
-    pub const ZERO: Self = new_self!(i64::MIN);
+    //const ZERO: Self = new_self!(i64::MIN);
     pub const ONE: Self = new_self!(0);
+    //TODO remove this
     pub const NAN: Self = new_self!(i64::MAX);
 }
 
@@ -91,9 +92,9 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
         new_self!(res.expose())
     }
 
-    pub fn is_zero(self) -> bool {
-        Self::is_zero_inner(self.inner)
-    }
+    //pub fn is_zero(self) -> bool {
+    //Self::is_zero_inner(self.inner)
+    //}
 
     pub fn is_nan(self) -> bool {
         self == Self::NAN
@@ -103,57 +104,51 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
         Self::from_f64_inner(f)
     }
 
-    #[inline]
-    pub fn safe_add(self, other: Self) -> Self {
-        if self.is_zero() {
-            return other;
-        }
-        if other.is_zero() {
-            return self;
-        }
-        debug_assert!(!(self.is_zero() && other.is_zero()));
-        self + other
-    }
+    //#[inline]
+    //pub fn safe_add(self, other: Self) -> Self {
+    //if self.is_zero() {
+    //return other;
+    //}
+    //if other.is_zero() {
+    //return self;
+    //}
+    //debug_assert!(!(self.is_zero() && other.is_zero()));
+    //self + other
+    //}
 
-    #[inline]
-    pub fn safe_sub(self, other: Self) -> Self {
-        if self.is_zero() {
-            return Self::ZERO;
-        }
-        if other.is_zero() {
-            return self;
-        }
-        debug_assert!(!(self.is_zero() && other.is_zero()));
-        self - other
-    }
+    //#[inline]
+    //pub fn safe_sub(self, other: Self) -> Self {
+    //if self.is_zero() {
+    //return Self::ZERO;
+    //}
+    //if other.is_zero() {
+    //return self;
+    //}
+    //debug_assert!(!(self.is_zero() && other.is_zero()));
+    //self - other
+    //}
 
-    #[inline]
-    pub fn safe_mul(self, other: Self) -> Self {
-        if self.is_zero() || other.is_zero() {
-            return Self::ZERO;
-        }
-        self * other
-    }
+    //#[inline]
+    //pub fn safe_mul(self, other: Self) -> Self {
+    //if self.is_zero() || other.is_zero() {
+    //return Self::ZERO;
+    //}
+    //self * other
+    //}
 
-    #[inline]
-    pub fn safe_div(self, other: Self) -> Self {
-        if other.is_zero() {
-            return Self::NAN;
-        }
-        if self.is_zero() {
-            return Self::ZERO;
-        }
-        self / other
-    }
-
-    fn is_zero_inner(a: i64) -> bool {
-        a == Self::ZERO.inner
-    }
+    //#[inline]
+    //pub fn safe_div(self, other: Self) -> Self {
+    //if other.is_zero() {
+    //return Self::NAN;
+    //}
+    //if self.is_zero() {
+    //return Self::ZERO;
+    //}
+    //self / other
+    //}
 
     /// lse(a, b) = ln(exp(a) + exp(b))
     fn lse(a: i64, b: i64) -> i64 {
-        debug_assert!(!Self::is_zero_inner(a));
-        debug_assert!(!Self::is_zero_inner(b));
         let flag = (a >= b) as i64;
         let max_val = a * flag + b * (1 - flag);
         let diff = match max_val.checked_mul(2) {
@@ -166,15 +161,11 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
     /// lme(a, b) = ln(exp(a) + exp(b))
     /// TODO fix this
     fn _lse(a: i64, b: i64) -> i64 {
-        debug_assert!(!Self::is_zero_inner(a));
-        debug_assert!(!Self::is_zero_inner(b));
         Self::from(Into::<f64>::into(new_self!(a)) + Into::<f64>::into(new_self!(b))).inner
     }
 
     /// lme(a, b) = ln(exp(a) - exp(b))
     fn lme(a: i64, b: i64) -> i64 {
-        debug_assert!(!Self::is_zero_inner(a));
-        debug_assert!(!Self::is_zero_inner(b));
         let z = a - b;
         a + Self::fp_log_lt_one(Self::ome(z))
     }
@@ -182,8 +173,6 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
     /// lme(a, b) = ln(exp(a) - exp(b))
     /// TODO fix this
     fn _lme(a: i64, b: i64) -> i64 {
-        debug_assert!(!Self::is_zero_inner(a));
-        debug_assert!(!Self::is_zero_inner(b));
         Self::from(Into::<f64>::into(new_self!(a)) - Into::<f64>::into(new_self!(b))).inner
     }
 
@@ -191,7 +180,6 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
     /// Restricted to the positive domain (a >= 0)
     /// Approximation level can be adjusted
     fn nls(a: i64) -> i64 {
-        debug_assert!(!Self::is_zero_inner(a));
         let mut x = a;
         let mut step = Self::from_i64_inner(NLS_MAX_INPUT as i64 / 2).inner;
         let mut pos_flags = [0i64; NLS_N_SPLIT];
@@ -325,7 +313,7 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
     const NLS_COEFFS: [[Self; NLS_POLY_DEG + 1]; NLS_N_SEG] = Self::nsl_coeffs_fixed();
 
     const fn nsl_coeffs_fixed() -> [[Self; NLS_POLY_DEG + 1]; NLS_N_SEG] {
-        let mut out = [[Self::ZERO; NLS_POLY_DEG + 1]; NLS_N_SEG];
+        let mut out = [[new_self!(0); NLS_POLY_DEG + 1]; NLS_N_SEG];
         let mut i = 0;
         loop {
             let mut j = 0;
@@ -347,7 +335,7 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
     const OME_COEFFS: [[Self; OME_POLY_DEG + 1]; OME_N_SEG] = Self::ome_coeffs_fixed();
 
     const fn ome_coeffs_fixed() -> [[Self; OME_POLY_DEG + 1]; OME_N_SEG] {
-        let mut out = [[Self::ZERO; OME_POLY_DEG + 1]; OME_N_SEG];
+        let mut out = [[new_self!(0); OME_POLY_DEG + 1]; OME_N_SEG];
         let mut i = 0;
         loop {
             let mut j = 0;
@@ -381,9 +369,6 @@ impl<F: Unsigned> From<f64> for LnFixed<F> {
 
 impl<F: Unsigned + PartialOrd> Into<f64> for LnFixed<F> {
     fn into(self) -> f64 {
-        if self.is_zero() {
-            return 0.;
-        }
         if self.is_nan() {
             return f64::NAN;
         }
@@ -398,10 +383,6 @@ macro_rules! num_op {
                 type Output = Self;
                 #[inline]
                 fn $op_name(self, other: Self) -> Self {
-                    debug_assert!(!self.is_zero());
-                    debug_assert!(!other.is_zero());
-                    debug_assert!(!self.is_nan());
-                    debug_assert!(!other.is_nan());
                     new_self!($op(self.inner, other.inner))
                 }
             }
@@ -409,10 +390,6 @@ macro_rules! num_op {
             impl<F: Unsigned + PartialOrd> std::ops::[<$trt Assign>] for LnFixed<F> {
                 #[inline]
                 fn [<$op_name _assign>](&mut self, other: Self) {
-                    debug_assert!(!self.is_zero());
-                    debug_assert!(!other.is_zero());
-                    debug_assert!(!self.is_nan());
-                    debug_assert!(!other.is_nan());
                     self.inner = $op(self.inner, other.inner);
                 }
             }
@@ -449,11 +426,11 @@ impl<F: Unsigned + PartialOrd> std::fmt::Display for LnFixed<F> {
 
 impl<F: Unsigned + PartialOrd> num_traits::identities::Zero for LnFixed<F> {
     fn zero() -> Self {
-        Self::ZERO
+        panic!("This should never be called!");
     }
 
     fn is_zero(&self) -> bool {
-        Self::is_zero(*self)
+        false
     }
 }
 

@@ -16,16 +16,13 @@ pub const BACKGROUND: f64 = 1e-5;
 mod cons {
     pub const __NORM_THRESHOLD: f64 = 1e-20;
     pub const __NORM_SCALE_FACTOR: f64 = 1e10;
-    pub const __ZERO: f64 = 0f64;
     pub const __E: f64 = 1e-30;
 }
 
 #[cfg(feature = "leak-resistant")]
 mod cons {
-    use super::Real;
     pub const __NORM_THRESHOLD: f64 = 1e-20;
     pub const __NORM_SCALE_FACTOR: f64 = 1e10;
-    pub const __ZERO: Real = Real::ZERO;
     pub const __E: f64 = 1e-30;
 }
 
@@ -44,7 +41,6 @@ pub fn impute_chunk(
     assert!(thap.len() == ref_panel.n_markers);
 
     // Put all constants on stack
-    let ZERO = cons::__ZERO;
     let NORM_THRESHOLD = *_NORM_THRESHOLD;
     let NORM_SCALE_FACTOR = *_NORM_SCALE_FACTOR;
     let E = *_E;
@@ -53,12 +49,12 @@ pub fn impute_chunk(
     let m = ref_panel.n_haps;
     let m_real: Real = u32::try_from(m).unwrap().into();
 
-    let mut imputed = Array1::<Real>::zeros(thap.len());
+    let mut imputed = unsafe { Array1::<Real>::uninitialized(thap.len()) };
 
     let mut fwdcache = Vec::new();
     let mut fwdcache_norecom = Vec::new();
     let mut fwdcache_first = Vec::new();
-    let mut fwdcache_all = Array2::<Real>::zeros((blocks.len(), m));
+    let mut fwdcache_all = unsafe { Array2::<Real>::uninitialized((blocks.len(), m)) };
 
     /* Forward pass */
     let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
@@ -114,8 +110,9 @@ pub fn impute_chunk(
 
         fwdcache_all.slice_mut(s![b, ..]).assign(&sprob_all); // save cache
 
-        let mut fwdprob = Array2::<Real>::zeros((block.nvar, block.nuniq));
-        let mut fwdprob_norecom = Array2::<Real>::zeros((block.nvar, block.nuniq));
+        let mut fwdprob = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
+        let mut fwdprob_norecom =
+            unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
 
         // Fold probabilities
 
@@ -223,8 +220,9 @@ pub fn impute_chunk(
                 },
             );
 
-        let mut sprob_recom = &sprob - &sprob_norecom;
-        sprob_recom.iter_mut().for_each(|p| *p = (*p).max(ZERO));
+        let sprob_recom = &sprob - &sprob_norecom;
+        #[cfg(not(feature = "leak-resistant"))]
+        let sprob_norecom = sprob_recom.iter_mut().for_each(|p| *p = (*p).max(0.));
 
         // Unfold probabilities
         if b < blocks.len() - 1 {
@@ -418,70 +416,74 @@ pub fn impute_chunk(
             sprob.assign(&(complement * &sprob + &block.clustsize * sprob_tot));
 
             // Impute very first position (edge case)
+            // TODO fix this
             if b == 0 && j == 1 {
-                #[cfg(not(feature = "leak-resistant"))]
-                let combined = {
-                    let x = &fwdprob_norecom.slice(s![0, ..]) * &sprob_norecom;
-                    &jprob * &(x.clone() / (fwdprob_first * &sprob_first + E))
-                        + (&fwdprob.slice(s![0, ..]) * &sprob - x) / &block.clustsize
-                };
+                //#[cfg(not(feature = "leak-resistant"))]
+                //let combined = {
+                //let x = &fwdprob_norecom.slice(s![0, ..]) * &sprob_norecom;
+                //&jprob * &(x.clone() / (fwdprob_first * &sprob_first + E))
+                //+ (&fwdprob.slice(s![0, ..]) * &sprob - x) / &block.clustsize
+                //};
 
-                #[cfg(feature = "leak-resistant")]
-                let combined = {
-                    let len = jprob.len();
-                    Array1::from(
-                        (0..len)
-                            .map(|i| {
-                                let x =
-                                    fwdprob_norecom.slice(s![0, ..])[i].safe_mul(sprob_norecom[i]);
-                                jprob[i]
-                                    .safe_mul(x.safe_div(fwdprob_first[i] * sprob_first[i] + E))
-                                    .safe_add(
-                                        (fwdprob.slice(s![0, ..])[i]
-                                            .safe_mul(sprob[i])
-                                            .safe_sub(x))
-                                        .safe_div(block.clustsize[i]),
-                                    )
-                            })
-                            .collect::<Vec<Real>>(),
-                    )
-                };
+                //#[cfg(feature = "leak-resistant")]
+                //let combined = {
+                //let len = jprob.len();
+                //Array1::from(
+                //(0..len)
+                //.map(|i| {
+                //let x =
+                //fwdprob_norecom.slice(s![0, ..])[i].safe_mul(sprob_norecom[i]);
+                //jprob[i]
+                //.safe_mul(x.safe_div(fwdprob_first[i] * sprob_first[i] + E))
+                //.safe_add(
+                //(fwdprob.slice(s![0, ..])[i]
+                //.safe_mul(sprob[i])
+                //.safe_sub(x))
+                //.safe_div(block.clustsize[i]),
+                //)
+                //})
+                //.collect::<Vec<Real>>(),
+                //)
+                //};
 
-                let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![0, ..])).fold(
-                    (ZERO, ZERO),
-                    |mut acc, &c, &rsym| {
-                        #[cfg(not(feature = "leak-resistant"))]
-                        if rsym == 1 {
-                            acc.1 += c;
-                            acc
-                        } else {
-                            acc.0 += c;
-                            acc
-                        }
+                //let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![0, ..])).fold(
+                //(ZERO, ZERO),
+                //|mut acc, &c, &rsym| {
+                //#[cfg(not(feature = "leak-resistant"))]
+                //if rsym == 1 {
+                //acc.1 += c;
+                //acc
+                //} else {
+                //acc.0 += c;
+                //acc
+                //}
 
-                        #[cfg(feature = "leak-resistant")]
-                        if rsym == 1 {
-                            acc.1 = acc.1.safe_add(c);
-                            acc
-                        } else {
-                            acc.0 = acc.0.safe_add(c);
-                            acc
-                        }
-                    },
-                );
+                //#[cfg(feature = "leak-resistant")]
+                //if rsym == 1 {
+                //acc.1 = acc.1.safe_add(c);
+                //acc
+                //} else {
+                //acc.0 = acc.0.safe_add(c);
+                //acc
+                //}
+                //},
+                //);
 
-                #[cfg(not(feature = "leak-resistant"))]
-                let res = p1 / (p1 + p0);
+                //#[cfg(not(feature = "leak-resistant"))]
+                //let res = p1 / (p1 + p0);
 
-                #[cfg(feature = "leak-resistant")]
-                let res = p1.safe_div(p1.safe_add(p0));
+                //#[cfg(feature = "leak-resistant")]
+                //let res = p1.safe_div(p1.safe_add(p0));
 
-                imputed[0] = res;
+                //imputed[0] = res;
+
+                imputed[0] = Real::NAN;
             }
         }
 
-        let mut sprob_recom = &sprob - &sprob_norecom;
-        sprob_recom.iter_mut().for_each(|p| *p = (*p).max(ZERO));
+        let sprob_recom = &sprob - &sprob_norecom;
+        #[cfg(not(feature = "leak-resistant"))]
+        let sprob_recom = sprob_recom.iter_mut().for_each(|p| *p = (*p).max(0.));
 
         // Unfold probabilities
         if b > 0 {
