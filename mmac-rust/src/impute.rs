@@ -34,18 +34,18 @@ lazy_static! {
 }
 
 // Balanced accumulator
-pub struct Bacc {
-    acc: Vec<Option<Real>>,
-}
+#[cfg(feature = "leak-resistant")]
+pub struct Bacc(Vec<Option<Real>>);
 
+#[cfg(feature = "leak-resistant")]
 impl Bacc {
     pub fn new() -> Bacc {
-        Bacc { acc: Vec::new() }
+        Bacc(Vec::new())
     }
 
     pub fn add(&mut self, val: Real) {
         let mut val = Some(val);
-        for slot in self.acc.iter_mut() {
+        for slot in self.0.iter_mut() {
             if slot.is_some() {
                 val.replace(slot.take().unwrap() + val.unwrap());
             } else {
@@ -55,22 +55,16 @@ impl Bacc {
         }
 
         if val.is_some() {
-            self.acc.push(val);
+            self.0.push(val);
         }
     }
 
-    pub fn result(&self) -> Option<Real> {
-        let mut total: Option<Real> = None;
-        for slot in self.acc.iter() {
-            if slot.is_some() {
-                if total.is_some() {
-                    total.replace(slot.unwrap() + total.unwrap());
-                } else {
-                    total.replace(slot.unwrap());
-                }
-            }
-        }
-        total
+    pub fn result(self) -> Real {
+        self.0
+            .into_iter()
+            .filter(|v| v.is_some())
+            .map(|v| v.unwrap())
+            .sum()
     }
 }
 
@@ -135,7 +129,7 @@ pub fn impute_chunk(
                 .into();
 
                 #[cfg(feature = "leak-resistant")]
-                let emi: Real = const_time::select_4(
+                let emi: Real = const_time::select_4_no_ln(
                     tsym.tp_eq(&1),
                     tsym.tp_eq(&block.rhap[[0, ind]]),
                     ((1. - err) + err * block.afreq[0] + BACKGROUND).ln(),
@@ -169,19 +163,15 @@ pub fn impute_chunk(
 
         #[cfg(feature = "leak-resistant")]
         let mut sprob = {
-            let mut sprob: Vec<Bacc> = Vec::with_capacity(block.nuniq);
-            for _i in 0..block.nuniq {
-                sprob.push(Bacc::new());
-            }
-            for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-                sprob[ind].add(p);
-            }
-            Array1::from(
-                sprob
-                    .into_iter()
-                    .map(|v| v.result().unwrap())
-                    .collect::<Vec<Real>>(),
-            )
+            let sprob = (0..block.nuniq)
+                .map(|i| {
+                    block.rev_indmap[&i]
+                        .iter()
+                        .map(|&j| sprob_all[j])
+                        .sum::<Real>()
+                })
+                .collect::<Vec<Real>>();
+            Array1::from(sprob)
         };
 
         let sprob_first = sprob.clone();
@@ -204,11 +194,7 @@ pub fn impute_chunk(
                     let rec_real: Real = rec.into();
 
                     // Transition
-                    let mut sprob_tot = Bacc::new();
-                    for val in sprob.iter() {
-                        sprob_tot.add(*val);
-                    }
-                    let mut sprob_tot = sprob_tot.result().unwrap() * (rec_real / m_real);
+                    let mut sprob_tot = sprob.iter().sum::<Real>() * (rec_real / m_real);
                     sprob_norecom *= Real::from(1. - rec);
                     let mut complement: Real = (1. - rec).into();
 
@@ -318,22 +304,15 @@ pub fn impute_chunk(
 
         #[cfg(feature = "leak-resistant")]
         let jprob = {
-            let mut jprob: Vec<Bacc> = Vec::with_capacity(block.nuniq);
-            for _i in 0..block.nuniq {
-                jprob.push(Bacc::new());
-            }
-            Zip::from(&block.indmap)
-                .and(fwdcache_all.slice(s![b, ..]))
-                .and(&sprob_all)
-                .apply(|&ind, &c, &p| {
-                    jprob[ind].add(c * p);
-                });
-            Array1::from(
-                jprob
-                    .into_iter()
-                    .map(|v| v.result().unwrap())
-                    .collect::<Vec<Real>>(),
-            )
+            let jprob = (0..block.nuniq)
+                .map(|i| {
+                    block.rev_indmap[&i]
+                        .iter()
+                        .map(|&j| fwdcache_all[[b, j]] * sprob_all[j])
+                        .sum::<Real>()
+                })
+                .collect::<Vec<Real>>();
+            Array1::from(jprob)
         };
 
         // Fold probabilities
@@ -348,19 +327,15 @@ pub fn impute_chunk(
 
         #[cfg(feature = "leak-resistant")]
         let mut sprob = {
-            let mut sprob: Vec<Bacc> = Vec::with_capacity(block.nuniq);
-            for _i in 0..block.nuniq {
-                sprob.push(Bacc::new());
-            }
-            for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-                sprob[ind].add(p);
-            }
-            Array1::from(
-                sprob
-                    .into_iter()
-                    .map(|v| v.result().unwrap())
-                    .collect::<Vec<Real>>(),
-            )
+            let sprob = (0..block.nuniq)
+                .map(|i| {
+                    block.rev_indmap[&i]
+                        .iter()
+                        .map(|&j| sprob_all[j])
+                        .sum::<Real>()
+                })
+                .collect::<Vec<Real>>();
+            Array1::from(sprob)
         };
 
         let sprob_first = sprob.clone();
@@ -411,7 +386,7 @@ pub fn impute_chunk(
                         }
                     },
                 );
-                (p0.result().unwrap(), p1.result().unwrap())
+                (p0.result(), p1.result())
             };
 
             imputed[varind] = p1 / (p1 + p0);
@@ -462,11 +437,7 @@ pub fn impute_chunk(
             let rec_real: Real = rec.into();
 
             // Transition
-            let mut sprob_tot = Bacc::new();
-            for val in sprob.iter() {
-                sprob_tot.add(*val);
-            }
-            let mut sprob_tot = sprob_tot.result().unwrap() * (rec_real / m_real);
+            let mut sprob_tot = sprob.iter().sum::<Real>() * (rec_real / m_real);
             sprob_norecom *= Real::from(1. - rec);
             let mut complement: Real = (1. - rec).into();
 

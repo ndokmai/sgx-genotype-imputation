@@ -331,18 +331,35 @@ impl<F: Unsigned + PartialOrd> std::iter::Sum<LnFixed<F>> for LnFixed<F> {
     where
         I: Iterator<Item = LnFixed<F>>,
     {
-        let first = iter.next().unwrap();
-        iter.fold(first, |acc, x| acc + x)
+        let mut accu = Vec::new();
+        loop {
+            match iter.next() {
+                Some(first) => match iter.next() {
+                    Some(second) => accu.push(first + second),
+                    None => {
+                        accu.push(first);
+                        break;
+                    }
+                },
+                None => break,
+            }
+        }
+        if accu.is_empty() {
+            panic!("Sum of empty iterator.");
+        }
+        if accu.len() == 1 {
+            return accu[0];
+        }
+        accu.into_iter().sum::<Self>()
     }
 }
 
 impl<'a, F: Unsigned + PartialOrd + 'static> std::iter::Sum<&'a LnFixed<F>> for LnFixed<F> {
-    fn sum<I>(mut iter: I) -> Self
+    fn sum<I>(iter: I) -> Self
     where
         I: Iterator<Item = &'a LnFixed<F>>,
     {
-        let first = iter.next().unwrap();
-        iter.fold(*first, |acc, &x| acc + x)
+        iter.cloned().sum::<Self>()
     }
 }
 
