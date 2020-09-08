@@ -1,4 +1,6 @@
 #[cfg(feature = "leak-resistant")]
+use crate::bacc::Bacc;
+#[cfg(feature = "leak-resistant")]
 use crate::const_time;
 use crate::ref_panel::RefPanel;
 use crate::{Input, Real};
@@ -31,41 +33,6 @@ lazy_static! {
     static ref _NORM_THRESHOLD: Real = cons::__NORM_THRESHOLD.into();
     static ref _NORM_SCALE_FACTOR: Real = cons::__NORM_SCALE_FACTOR.into();
     static ref _E: Real = cons::__E.into();
-}
-
-// Balanced accumulator
-#[cfg(feature = "leak-resistant")]
-pub struct Bacc(Vec<Option<Real>>);
-
-#[cfg(feature = "leak-resistant")]
-impl Bacc {
-    pub fn new() -> Bacc {
-        Bacc(Vec::new())
-    }
-
-    pub fn add(&mut self, val: Real) {
-        let mut val = Some(val);
-        for slot in self.0.iter_mut() {
-            if slot.is_some() {
-                val.replace(slot.take().unwrap() + val.unwrap());
-            } else {
-                slot.replace(val.take().unwrap());
-                break;
-            }
-        }
-
-        if val.is_some() {
-            self.0.push(val);
-        }
-    }
-
-    pub fn result(self) -> Real {
-        self.0
-            .into_iter()
-            .filter(|v| v.is_some())
-            .map(|v| v.unwrap())
-            .sum()
-    }
 }
 
 #[allow(non_snake_case)]
@@ -375,13 +342,13 @@ pub fn impute_chunk(
             #[cfg(feature = "leak-resistant")]
             let (p0, p1) = {
                 let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![j, ..])).fold(
-                    (Bacc::new(), Bacc::new()),
+                    (Bacc::init(), Bacc::init()),
                     |mut acc, &c, &rsym| {
                         if rsym == 1 {
-                            acc.1.add(c);
+                            acc.1 += c;
                             acc
                         } else {
-                            acc.0.add(c);
+                            acc.0 += c;
                             acc
                         }
                     },

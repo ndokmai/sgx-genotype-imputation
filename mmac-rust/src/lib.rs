@@ -1,6 +1,8 @@
 #![feature(const_fn)]
 
 #[cfg(feature = "leak-resistant")]
+mod bacc;
+#[cfg(feature = "leak-resistant")]
 mod const_time;
 mod impute;
 mod input;
