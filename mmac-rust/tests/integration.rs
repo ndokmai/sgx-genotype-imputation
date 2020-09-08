@@ -11,7 +11,7 @@ const REF_OUTPUT_FILE: &'static str = "test_data/small_output_ref.txt";
 const EPSILON: f64 = f64::EPSILON;
 
 #[cfg(feature = "leak-resistant")]
-const EPSILON: f64 = 1e-4;
+const EPSILON: f64 = 1e-2;
 
 fn load_ref_output() -> Vec<f64> {
     let file = BufReader::new(File::open(REF_OUTPUT_FILE).unwrap());

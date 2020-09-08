@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;
+use std::convert::TryInto;
 use std::marker::PhantomData;
 use timing_shield::{TpI64, TpOrd};
 use typenum::marker_traits::Unsigned;
@@ -10,7 +11,6 @@ const NLS_N_SPLIT: usize = 4;
 const NLS_N_SEG: usize = 1 << NLS_N_SPLIT;
 const NLS_MAX_INPUT: f64 = 16.;
 const NLS_POLY_DEG: usize = 2;
-
 #[rustfmt::skip]
 const NLS_COEFFS: [[f64; NLS_POLY_DEG+1]; NLS_N_SEG] = [
     [0.69273948669433593750, -0.49560832977294921875, 0.11664772033691406250],
@@ -29,6 +29,31 @@ const NLS_COEFFS: [[f64; NLS_POLY_DEG+1]; NLS_N_SEG] = [
     [0.00014686584472656250, -0.00002098083496093750, 0.00000000000000000000],
     [0.00006103515625000000, -0.00000858306884765625, 0.00000000000000000000],
     [0.00000000000000000000,  0.00000000000000000000, 0.00000000000000000000]
+];
+
+// OME approximation parameters
+const OME_N_SPLIT: usize = 4;
+const OME_N_SEG: usize = 1 << OME_N_SPLIT;
+const OME_MAX_INPUT: f64 = 10.;
+const OME_POLY_DEG: usize = 2;
+#[rustfmt::skip]
+const OME_COEFFS: [[f64; OME_POLY_DEG+1]; OME_N_SEG] = [
+    [0.00156021118164062500, 0.96903133392333984375, -0.36837196350097656250],
+    [0.06437397003173828125, 0.76515388488769531250, -0.19717502593994140625],
+    [0.20199489593505859375, 0.54148197174072265625, -0.10554027557373046875],
+    [0.36964511871337890625, 0.36044883728027343750, -0.05649185180664062500],
+    [0.53019905090332031250, 0.23073101043701171875, -0.03023815155029296875],
+    [0.66502285003662109375, 0.14373302459716796875, -0.01618576049804687500],
+    [0.76923084259033203125, 0.08776378631591796875, -0.00866413116455078125],
+    [0.84530639648437500000, 0.05277252197265625000, -0.00463771820068359375],
+    [0.89857387542724609375, 0.03134918212890625000, -0.00248241424560546875],
+    [0.93470382690429687500, 0.01844024658203125000, -0.00132942199707031250],
+    [0.95860195159912109375, 0.01075935363769531250, -0.00071144104003906250],
+    [0.97409248352050781250, 0.00623416900634765625, -0.00038146972656250000],
+    [0.98396682739257812500, 0.00359153747558593750, -0.00020408630371093750],
+    [0.99017333984375000000, 0.00205898284912109375, -0.00010967254638671875],
+    [0.99402809143066406250, 0.00117492675781250000, -0.00005912780761718750],
+    [1.00000000000000000000, 0.00000000000000000000, 0.00000000000000000000]
 ];
 
 macro_rules! new_self {
@@ -53,6 +78,10 @@ impl<F: Unsigned> LnFixed<F> {
 }
 
 impl<F: Unsigned + PartialOrd> LnFixed<F> {
+    fn new(inner: i64) -> Self {
+        new_self!(inner)
+    }
+
     pub fn max(self, other: Self) -> Self {
         let self_inner = TpI64::protect(self.inner);
         let other_inner = TpI64::protect(other.inner);
@@ -121,16 +150,8 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
         a == Self::ZERO.inner
     }
 
-    /// lme(a, b) = ln(exp(a) + exp(b))
-    /// TODO fix this
-    fn lse(a: i64, b: i64) -> i64 {
-        debug_assert!(!Self::is_zero_inner(a));
-        debug_assert!(!Self::is_zero_inner(b));
-        Self::from(Into::<f64>::into(new_self!(a)) + Into::<f64>::into(new_self!(b))).inner
-    }
-
     /// lse(a, b) = ln(exp(a) + exp(b))
-    fn _lse(a: i64, b: i64) -> i64 {
+    fn lse(a: i64, b: i64) -> i64 {
         debug_assert!(!Self::is_zero_inner(a));
         debug_assert!(!Self::is_zero_inner(b));
         let flag = (a >= b) as i64;
@@ -142,9 +163,25 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
         max_val + Self::nls(diff)
     }
 
+    /// lme(a, b) = ln(exp(a) + exp(b))
+    /// TODO fix this
+    fn _lse(a: i64, b: i64) -> i64 {
+        debug_assert!(!Self::is_zero_inner(a));
+        debug_assert!(!Self::is_zero_inner(b));
+        Self::from(Into::<f64>::into(new_self!(a)) + Into::<f64>::into(new_self!(b))).inner
+    }
+
+    /// lme(a, b) = ln(exp(a) - exp(b))
+    fn lme(a: i64, b: i64) -> i64 {
+        debug_assert!(!Self::is_zero_inner(a));
+        debug_assert!(!Self::is_zero_inner(b));
+        let z = a - b;
+        a + Self::fp_log_lt_one(Self::ome(z))
+    }
+
     /// lme(a, b) = ln(exp(a) - exp(b))
     /// TODO fix this
-    fn lme(a: i64, b: i64) -> i64 {
+    fn _lme(a: i64, b: i64) -> i64 {
         debug_assert!(!Self::is_zero_inner(a));
         debug_assert!(!Self::is_zero_inner(b));
         Self::from(Into::<f64>::into(new_self!(a)) - Into::<f64>::into(new_self!(b))).inner
@@ -184,13 +221,93 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
         }
 
         let mut res = coeffs[0] + ((a * coeffs[1]) >> F::USIZE);
-        let mut self_pow = a;
+        let mut a_pow = a;
         for &c in coeffs.iter().skip(2) {
-            self_pow = match self_pow.checked_mul(a) {
+            a_pow = match a_pow.checked_mul(a) {
                 Some(r) => r >> F::USIZE,
                 None => return 0,
             };
-            res += (self_pow * c) >> F::USIZE;
+            res += (a_pow * c) >> F::USIZE;
+        }
+        res
+    }
+
+    /// Approximate log function for domain 0 < a <= 1
+    fn fp_log_lt_one(a: i64) -> i64 {
+        let onehalf = 1u64 << (F::USIZE - 1);
+        let mut z = a;
+        let mut z_scaled = 0u64;
+
+        let mut shift = 0usize;
+        let mut first_flag = 1u64;
+        for _ in 0..(F::USIZE - 1) {
+            let bit = (z >= onehalf as i64) as u64;
+            shift += 1 - bit as usize;
+            let found = first_flag * bit;
+            z_scaled = found * z as u64 + (1 - found) * z_scaled;
+            first_flag = ((1 - found as i64) * first_flag as i64).try_into().unwrap();
+            z <<= 1;
+        }
+
+        // if first_flag is still true then input was zero, just set to smallest non-zero case
+        z_scaled = (first_flag * onehalf + (1 - first_flag) * z_scaled)
+            .try_into()
+            .unwrap();
+        shift = (first_flag * (F::U64 - 2) + (1 - first_flag) * shift as u64)
+            .try_into()
+            .unwrap();
+
+        let zs = z_scaled as i64 - Self::from_i64_inner(1 as i64).inner;
+        let zs2 = (zs * zs) >> F::USIZE;
+        let zs3 = (zs * zs2) >> F::USIZE;
+
+        let taylor_approx =
+            zs - (zs2 >> 1) + ((zs3 * Self::from_f64_inner(1. / 3.).inner) >> F::USIZE);
+        let ln2 = Self::from_f64_inner(0.69314718055994528623).inner;
+        taylor_approx - shift as i64 * ln2
+    }
+
+    /// Piecewise polynomial approximation to f(a) = 1 - exp(-a)
+    /// Restricted to the positive domain (a >= 0)
+    /// Approximation level can be adjusted
+    fn ome(a: i64) -> i64 {
+        let mut x = a;
+        let mut step = Self::from_f64_inner(OME_MAX_INPUT / 2.).inner;
+        let mut pos_flags = [0i64; OME_N_SPLIT];
+        let mut flag = 1i64;
+
+        for p in pos_flags.iter_mut() {
+            x -= (2 * flag - 1) * step;
+            flag = (x >= 0) as i64;
+            *p = flag;
+            step /= 2;
+        }
+
+        let mut selector = [0i64; OME_N_SEG];
+        for i in 0..OME_N_SEG {
+            let mut sel = 1i64;
+            for j in 0..OME_N_SPLIT {
+                let bit = ((i & (1 << (OME_N_SPLIT - j - 1))) > 0) as i64;
+                sel *= bit * pos_flags[j] + (1 - bit) * (1 - pos_flags[j]);
+            }
+            selector[i] = sel;
+        }
+
+        let mut coeffs = [0i64; OME_POLY_DEG + 1];
+        for i in 0..OME_N_SEG {
+            for j in 0..(OME_POLY_DEG + 1) {
+                coeffs[j] += selector[i] * Self::OME_COEFFS[i][j].inner;
+            }
+        }
+
+        let mut res = coeffs[0] + ((a * coeffs[1]) >> F::USIZE);
+        let mut a_pow = a;
+        for &c in coeffs.iter().skip(2) {
+            a_pow = match a_pow.checked_mul(a) {
+                Some(r) => r >> F::USIZE,
+                None => return 0,
+            };
+            res += (a_pow * c) >> F::USIZE;
         }
         res
     }
@@ -221,6 +338,28 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
             }
             i += 1;
             if i == NLS_N_SEG {
+                break;
+            }
+        }
+        out
+    }
+
+    const OME_COEFFS: [[Self; OME_POLY_DEG + 1]; OME_N_SEG] = Self::ome_coeffs_fixed();
+
+    const fn ome_coeffs_fixed() -> [[Self; OME_POLY_DEG + 1]; OME_N_SEG] {
+        let mut out = [[Self::ZERO; OME_POLY_DEG + 1]; OME_N_SEG];
+        let mut i = 0;
+        loop {
+            let mut j = 0;
+            loop {
+                out[i][j] = Self::from_f64_inner(OME_COEFFS[i][j]);
+                j += 1;
+                if j == OME_POLY_DEG + 1 {
+                    break;
+                }
+            }
+            i += 1;
+            if i == OME_N_SEG {
                 break;
             }
         }
@@ -410,5 +549,25 @@ mod tests {
         println!("c = {}", c);
         println!("d = {}", d);
         assert!((c - d).abs() < 1e-3);
+    }
+
+    #[test]
+    fn fp_log_lt_one_test() {
+        type F = LnFixed<typenum::U20>;
+        let a = 0.1234f64;
+        let a_fixed = F::from_f64_inner(a);
+        let res = into_f64_inner(F::new(F::fp_log_lt_one(a_fixed.inner)));
+        let reference = a.ln();
+        assert!((reference - res).abs() < 1e-7);
+    }
+
+    #[test]
+    fn ome_test() {
+        type F = LnFixed<typenum::U20>;
+        let a = 0.1234f64;
+        let a_fixed = F::from_f64_inner(a);
+        let res = into_f64_inner(F::new(F::ome(a_fixed.inner)));
+        let reference = 1. - 1. / a.exp();
+        assert!((reference - res).abs() < 1e-3);
     }
 }
