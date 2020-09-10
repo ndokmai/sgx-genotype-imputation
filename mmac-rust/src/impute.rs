@@ -1,47 +1,223 @@
-#[cfg(feature = "leak-resistant")]
-use crate::bacc::Bacc;
 use crate::ref_panel::RefPanel;
+use crate::Block;
 use crate::{Input, Real};
 use lazy_static::lazy_static;
-use ndarray::{s, Array1, Array2, ArrayView1, Zip};
+use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::convert::TryFrom;
+
 #[cfg(feature = "leak-resistant")]
-use timing_shield::{TpEq, TpOrd};
-
-pub const BACKGROUND: f64 = 1e-5;
-
-#[cfg(not(feature = "leak-resistant"))]
-mod cons {
-    pub const __NORM_THRESHOLD: f64 = 1e-20;
-    pub const __NORM_SCALE_FACTOR: f64 = 1e10;
-    pub const __E: f64 = 1e-30;
+mod leak_resistant_mod {
+    pub use crate::bacc::Bacc;
+    pub use timing_shield::{TpEq, TpOrd};
 }
 
 #[cfg(feature = "leak-resistant")]
-mod cons {
-    pub const __NORM_THRESHOLD: f64 = 1e-20;
-    pub const __NORM_SCALE_FACTOR: f64 = 1e10;
-    pub const __E: f64 = 1e-30;
-}
+use leak_resistant_mod::*;
+
+const BACKGROUND: f64 = 1e-5;
+const ERR: f64 = 0.00999;
+const __NORM_THRESHOLD: f64 = 1e-20;
+const __NORM_SCALE_FACTOR: f64 = 1e10;
+const __E: f64 = 1e-30;
 
 lazy_static! {
-    static ref _NORM_THRESHOLD: Real = cons::__NORM_THRESHOLD.into();
-    static ref _NORM_SCALE_FACTOR: Real = cons::__NORM_SCALE_FACTOR.into();
-    static ref _E: Real = cons::__E.into();
+    static ref _NORM_THRESHOLD: Real = __NORM_THRESHOLD.into();
+    static ref _NORM_SCALE_FACTOR: Real = __NORM_SCALE_FACTOR.into();
+    static ref _E: Real = __E.into();
+}
+
+fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real> {
+    #[cfg(not(feature = "leak-resistant"))]
+    {
+        let mut sprob = Array1::<Real>::zeros(block.nuniq);
+        for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
+            sprob[ind] += p;
+        }
+        sprob
+    }
+
+    #[cfg(feature = "leak-resistant")]
+    {
+        let sprob = (0..block.nuniq)
+            .map(|i| {
+                block.rev_indmap[&i]
+                    .iter()
+                    .map(|&j| sprob_all[j])
+                    .sum::<Real>()
+            })
+            .collect::<Vec<Real>>();
+        Array1::from(sprob)
+    }
+}
+
+fn single_emission(tsym: Input, block_afreq: f64, rhap: i8) -> Real {
+    #[cfg(not(feature = "leak-resistant"))]
+    {
+        let afreq = if tsym == 1 {
+            block_afreq
+        } else {
+            1. - block_afreq
+        };
+        if tsym == rhap {
+            (1. - ERR) + ERR * afreq + BACKGROUND
+        } else {
+            ERR * afreq + BACKGROUND
+        }
+    }
+
+    #[cfg(feature = "leak-resistant")]
+    Real::select_from_4_f64(
+        tsym.tp_eq(&1),
+        tsym.tp_eq(&rhap),
+        (1. - ERR) + ERR * block_afreq + BACKGROUND,
+        ERR * block_afreq + BACKGROUND,
+        (1. - ERR) + ERR * (1. - block_afreq) + BACKGROUND,
+        ERR * (1. - block_afreq) + BACKGROUND,
+    )
+}
+
+fn first_emission(tsym: Input, block: &Block, mut sprob_all: ArrayViewMut1<Real>) {
+    let afreq = block.afreq[0];
+    Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
+        let emi = single_emission(tsym, afreq, block.rhap[[0, i]]);
+        *p = emi;
+    });
+}
+
+fn later_emission(
+    tsym: Input,
+    mut sprob: ArrayViewMut1<Real>,
+    mut sprob_norecom: ArrayViewMut1<Real>,
+    block_afreq: f64,
+    rhap_row: ArrayView1<i8>,
+) {
+    Zip::from(&mut sprob)
+        .and(&mut sprob_norecom)
+        .and(rhap_row)
+        .apply(|p, p_norecom, &rhap| {
+            let emi = single_emission(tsym, block_afreq, rhap);
+            *p *= emi;
+            *p_norecom *= emi;
+        });
+}
+
+/// Lazy normalization (same as minimac)
+#[allow(non_snake_case)]
+fn normalize(sprob_tot: &mut Real, complement: &mut Real, mut sprob_norecom: ArrayViewMut1<Real>) {
+    let NORM_THRESHOLD = *_NORM_THRESHOLD;
+    let NORM_SCALE_FACTOR = *_NORM_SCALE_FACTOR;
+
+    #[cfg(not(feature = "leak-resistant"))]
+    if *sprob_tot < NORM_THRESHOLD {
+        *sprob_tot *= NORM_SCALE_FACTOR;
+        *complement *= NORM_SCALE_FACTOR;
+        sprob_norecom *= NORM_SCALE_FACTOR;
+    }
+
+    #[cfg(feature = "leak-resistant")]
+    {
+        let scale = sprob_tot
+            .tp_lt(&NORM_THRESHOLD)
+            .select(NORM_SCALE_FACTOR, Real::ONE);
+        *sprob_tot *= scale;
+        *complement *= scale;
+        sprob_norecom *= scale;
+    }
+}
+
+fn transition(
+    rec: f64,
+    m_real: Real,
+    clustsize: ArrayView1<Real>,
+    mut sprob: ArrayViewMut1<Real>,
+    mut sprob_norecom: ArrayViewMut1<Real>,
+) {
+    let rec_real: Real = rec.into();
+
+    let mut sprob_tot = sprob.iter().sum::<Real>() * (rec_real / m_real);
+    sprob_norecom *= Real::from(1. - rec);
+    let mut complement: Real = (1. - rec).into();
+
+    normalize(&mut sprob_tot, &mut complement, sprob_norecom.view_mut());
+
+    sprob.assign(&(complement * &sprob + &clustsize * sprob_tot));
 }
 
 #[allow(non_snake_case)]
+fn unfold_probabilities(
+    block: &Block,
+    mut sprob_all: ArrayViewMut1<Real>,
+    sprob_first: ArrayView1<Real>,
+    sprob_recom: ArrayView1<Real>,
+    sprob_norecom: ArrayView1<Real>,
+) {
+    let E = *_E;
+    Zip::from(&mut sprob_all)
+        .and(&block.indmap)
+        .apply(|p, &ui| {
+            *p = (sprob_recom[ui] / block.clustsize[ui])
+                + (*p * (sprob_norecom[ui] / (sprob_first[ui] + E)));
+        });
+}
+
+#[allow(non_snake_case)]
+fn impute(
+    jprob: ArrayView1<Real>,
+    clustsize: ArrayView1<Real>,
+    rhap_row: ArrayView1<i8>,
+    fwdprob_row: ArrayView1<Real>,
+    fwdprob_first: ArrayView1<Real>,
+    fwdprob_norecom_row: ArrayView1<Real>,
+    sprob: ArrayView1<Real>,
+    sprob_first: ArrayView1<Real>,
+    sprob_norecom: ArrayView1<Real>,
+) -> Real {
+    let E = *_E;
+    let combined = {
+        let x = &fwdprob_norecom_row * &sprob_norecom;
+        &jprob * &(x.clone() / (&fwdprob_first * &sprob_first + E))
+            + (&fwdprob_row * &sprob - x) / &clustsize
+    };
+
+    #[cfg(not(feature = "leak-resistant"))]
+    let (p0, p1) = Zip::from(&combined)
+        .and(rhap_row)
+        .fold((0., 0.), |mut acc, &c, &rsym| {
+            if rsym == 1 {
+                acc.1 += c;
+                acc
+            } else {
+                acc.0 += c;
+                acc
+            }
+        });
+
+    #[cfg(feature = "leak-resistant")]
+    let (p0, p1) = {
+        let (p0, p1) = Zip::from(&combined).and(rhap_row).fold(
+            (Bacc::init(), Bacc::init()),
+            |mut acc, &c, &rsym| {
+                if rsym == 1 {
+                    acc.1 += c;
+                    acc
+                } else {
+                    acc.0 += c;
+                    acc
+                }
+            },
+        );
+        (p0.result(), p1.result())
+    };
+
+    p1 / (p1 + p0)
+}
+
 pub fn impute_chunk(
     _chunk_id: usize,
     thap: ArrayView1<Input>,
     ref_panel: &RefPanel,
 ) -> Array1<Real> {
     assert!(thap.len() == ref_panel.n_markers);
-
-    // Put all constants on stack
-    let NORM_THRESHOLD = *_NORM_THRESHOLD;
-    let NORM_SCALE_FACTOR = *_NORM_SCALE_FACTOR;
-    let E = *_E;
 
     let blocks = &ref_panel.blocks;
     let m = ref_panel.n_haps;
@@ -59,48 +235,16 @@ pub fn impute_chunk(
     let mut var_offset: usize = 0;
 
     // First position emission (edge case)
+    let tsym = thap[0];
     #[cfg(not(feature = "leak-resistant"))]
-    let cond = thap[0] != -1;
+    let cond = tsym != -1;
 
     #[cfg(feature = "leak-resistant")]
     // TODO: fix this leakage
-    let cond = thap[0].expose() != -1;
+    let cond = tsym.expose() != -1;
 
     if cond {
-        let block = &blocks[0];
-        let err = 0.00999;
-        let tsym = thap[0];
-
-        #[cfg(not(feature = "leak-resistant"))]
-        let afreq = if tsym == 1 {
-            block.afreq[0]
-        } else {
-            1. - block.afreq[0]
-        };
-
-        Zip::from(&mut sprob_all)
-            .and(&block.indmap)
-            .apply(|p, &ind| {
-                #[cfg(not(feature = "leak-resistant"))]
-                let emi: Real = if tsym == block.rhap[[0, ind]] {
-                    (1. - err) + err * afreq + BACKGROUND
-                } else {
-                    err * afreq + BACKGROUND
-                }
-                .into();
-
-                #[cfg(feature = "leak-resistant")]
-                let emi = Real::select_from_4_f64(
-                    tsym.tp_eq(&1),
-                    tsym.tp_eq(&block.rhap[[0, ind]]),
-                    (1. - err) + err * block.afreq[0] + BACKGROUND,
-                    err * block.afreq[0] + BACKGROUND,
-                    (1. - err) + err * (1. - block.afreq[0]) + BACKGROUND,
-                    err * (1. - block.afreq[0]) + BACKGROUND,
-                );
-
-                *p = emi;
-            });
+        first_emission(tsym, &blocks[0], sprob_all.view_mut());
     }
 
     for b in 0..blocks.len() {
@@ -112,29 +256,7 @@ pub fn impute_chunk(
         let mut fwdprob_norecom =
             unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
 
-        // Fold probabilities
-
-        #[cfg(not(feature = "leak-resistant"))]
-        let mut sprob = {
-            let mut sprob = Array1::<Real>::zeros(block.nuniq);
-            for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-                sprob[ind] += p;
-            }
-            sprob
-        };
-
-        #[cfg(feature = "leak-resistant")]
-        let mut sprob = {
-            let sprob = (0..block.nuniq)
-                .map(|i| {
-                    block.rev_indmap[&i]
-                        .iter()
-                        .map(|&j| sprob_all[j])
-                        .sum::<Real>()
-                })
-                .collect::<Vec<Real>>();
-            Array1::from(sprob)
-        };
+        let mut sprob = fold_probabilities(sprob_all.view(), &block);
 
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
@@ -148,78 +270,29 @@ pub fn impute_chunk(
             .and(fwdprob_norecom.slice_mut(s![1.., ..]).genrows_mut())
             .apply(
                 |&rec, &tsym, &block_afreq, rhap_row, mut fwdprob_row, mut fwdprob_norecom_row| {
-                    // TODO: for some reason minimac ignores error prob in input m3vcf
-                    //       and always uses 0.00999 as below. need to investigate further
-                    //let err = block.eprob[j];
-                    let err = 0.00999;
+                    transition(
+                        rec,
+                        m_real,
+                        block.clustsize.view(),
+                        sprob.view_mut(),
+                        sprob_norecom.view_mut(),
+                    );
 
-                    let rec_real: Real = rec.into();
-
-                    // Transition
-                    let mut sprob_tot = sprob.iter().sum::<Real>() * (rec_real / m_real);
-                    sprob_norecom *= Real::from(1. - rec);
-                    let mut complement: Real = (1. - rec).into();
-
-                    // Lazy normalization (same as minimac)
-                    #[cfg(not(feature = "leak-resistant"))]
-                    if sprob_tot < NORM_THRESHOLD {
-                        sprob_tot *= NORM_SCALE_FACTOR;
-                        complement *= NORM_SCALE_FACTOR;
-                        sprob_norecom *= NORM_SCALE_FACTOR;
-                    }
-
-                    #[cfg(feature = "leak-resistant")]
-                    {
-                        let scale = sprob_tot
-                            .tp_lt(&NORM_THRESHOLD)
-                            .select(NORM_SCALE_FACTOR, Real::ONE);
-                        sprob_tot *= scale;
-                        complement *= scale;
-                        sprob_norecom *= scale;
-                    }
-
-                    sprob.assign(&(complement * &sprob + &block.clustsize * sprob_tot));
-
-                    // Emission
-                    // TODO: fix this leakage
                     #[cfg(not(feature = "leak-resistant"))]
                     let cond = tsym != -1;
 
+                    // TODO: fix this leakage
                     #[cfg(feature = "leak-resistant")]
                     let cond = tsym.expose() != -1;
 
                     if cond {
-                        #[cfg(not(feature = "leak-resistant"))]
-                        let afreq = if tsym == 1 {
-                            block_afreq
-                        } else {
-                            1. - block_afreq
-                        };
-
-                        Zip::from(&mut sprob)
-                            .and(&mut sprob_norecom)
-                            .and(&rhap_row)
-                            .apply(|p, p_norecom, &rhap| {
-                                #[cfg(not(feature = "leak-resistant"))]
-                                let emi = if tsym == rhap {
-                                    (1. - err) + err * afreq + BACKGROUND
-                                } else {
-                                    err * afreq + BACKGROUND
-                                };
-
-                                #[cfg(feature = "leak-resistant")]
-                                let emi = Real::select_from_4_f64(
-                                    tsym.tp_eq(&1),
-                                    tsym.tp_eq(&rhap),
-                                    (1. - err) + err * block_afreq + BACKGROUND,
-                                    err * block_afreq + BACKGROUND,
-                                    (1. - err) + err * (1. - block_afreq) + BACKGROUND,
-                                    err * (1. - block_afreq) + BACKGROUND,
-                                );
-
-                                *p *= emi;
-                                *p_norecom *= emi;
-                            });
+                        later_emission(
+                            tsym,
+                            sprob.view_mut(),
+                            sprob_norecom.view_mut(),
+                            block_afreq,
+                            rhap_row,
+                        );
                     }
 
                     // Cache forward probabilities
@@ -230,16 +303,15 @@ pub fn impute_chunk(
 
         let sprob_recom = &sprob - &sprob_norecom;
 
-        // Unfold probabilities
+        // Skip last block
         if b < blocks.len() - 1 {
-            // Skip last block
-            Zip::from(&mut sprob_all)
-                .and(&block.indmap)
-                .apply(|p, &ui| {
-                    // TODO: precompute ui terms outside of this for loop
-                    *p = (sprob_recom[ui] / block.clustsize[ui])
-                        + (*p * (sprob_norecom[ui] / (sprob_first[ui] + E)));
-                });
+            unfold_probabilities(
+                block,
+                sprob_all.view_mut(),
+                sprob_first.view(),
+                sprob_recom.view(),
+                sprob_norecom.view(),
+            );
         }
 
         fwdcache.push(fwdprob);
@@ -286,150 +358,52 @@ pub fn impute_chunk(
             Array1::from(jprob)
         };
 
-        // Fold probabilities
-        #[cfg(not(feature = "leak-resistant"))]
-        let mut sprob = {
-            let mut sprob = Array1::<Real>::zeros(block.nuniq);
-            for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-                sprob[ind] += p;
-            }
-            sprob
-        };
-
-        #[cfg(feature = "leak-resistant")]
-        let mut sprob = {
-            let sprob = (0..block.nuniq)
-                .map(|i| {
-                    block.rev_indmap[&i]
-                        .iter()
-                        .map(|&j| sprob_all[j])
-                        .sum::<Real>()
-                })
-                .collect::<Vec<Real>>();
-            Array1::from(sprob)
-        };
-
+        let mut sprob = fold_probabilities(sprob_all.view(), &block);
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
 
         // Walk
         for j in (1..block.nvar).rev() {
             let rec = block.rprob[j - 1];
-            // TODO: for some reason minimac ignores error prob in input m3vcf
-            //       and always uses 0.00999 as below. need to investigate further
-            //let err = block.eprob[j];
-            let err = 0.00999;
             let varind = thap.len() - (var_offset + (block.nvar - j));
-            let tsym = thap[varind];
 
-            // Impute
-            let combined = {
-                let x = &fwdprob_norecom.slice(s![j, ..]) * &sprob_norecom;
-                &jprob * &(x.clone() / (fwdprob_first * &sprob_first + E))
-                    + (&fwdprob.slice(s![j, ..]) * &sprob - x) / &block.clustsize
-            };
-
-            #[cfg(not(feature = "leak-resistant"))]
-            let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![j, ..])).fold(
-                (0., 0.),
-                |mut acc, &c, &rsym| {
-                    if rsym == 1 {
-                        acc.1 += c;
-                        acc
-                    } else {
-                        acc.0 += c;
-                        acc
-                    }
-                },
+            imputed[varind] = impute(
+                jprob.view(),
+                block.clustsize.view(),
+                block.rhap.slice(s![j, ..]),
+                fwdprob.slice(s![j, ..]),
+                fwdprob_first.view(),
+                fwdprob_norecom.slice(s![j, ..]),
+                sprob.view(),
+                sprob_first.view(),
+                sprob_norecom.view(),
             );
 
-            #[cfg(feature = "leak-resistant")]
-            let (p0, p1) = {
-                let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![j, ..])).fold(
-                    (Bacc::init(), Bacc::init()),
-                    |mut acc, &c, &rsym| {
-                        if rsym == 1 {
-                            acc.1 += c;
-                            acc
-                        } else {
-                            acc.0 += c;
-                            acc
-                        }
-                    },
-                );
-                (p0.result(), p1.result())
-            };
-
-            imputed[varind] = p1 / (p1 + p0);
-
-            // Emission
-            // TODO: fix this leakage
+            let tsym = thap[varind];
             #[cfg(not(feature = "leak-resistant"))]
             let cond = tsym != -1;
 
+            // TODO: fix this leakage
             #[cfg(feature = "leak-resistant")]
             let cond = tsym.expose() != -1;
 
             if cond {
-                #[cfg(not(feature = "leak-resistant"))]
-                let afreq = if tsym == 1 {
-                    block.afreq[j]
-                } else {
-                    1. - block.afreq[j]
-                };
-                // not missing
-                Zip::from(&mut sprob)
-                    .and(&mut sprob_norecom)
-                    .and(block.rhap.slice(s![j, ..]))
-                    .apply(|p, p_norecom, &rhap| {
-                        #[cfg(not(feature = "leak-resistant"))]
-                        let emi = if tsym == rhap {
-                            (1. - err) + err * afreq + BACKGROUND
-                        } else {
-                            err * afreq + BACKGROUND
-                        };
-
-                        #[cfg(feature = "leak-resistant")]
-                        let emi = Real::select_from_4_f64(
-                            tsym.tp_eq(&1),
-                            tsym.tp_eq(&rhap),
-                            (1. - err) + err * block.afreq[j] + BACKGROUND,
-                            err * block.afreq[j] + BACKGROUND,
-                            (1. - err) + err * (1. - block.afreq[j]) + BACKGROUND,
-                            err * (1. - block.afreq[j]) + BACKGROUND,
-                        );
-
-                        *p *= emi;
-                        *p_norecom *= emi;
-                    });
+                later_emission(
+                    tsym,
+                    sprob.view_mut(),
+                    sprob_norecom.view_mut(),
+                    block.afreq[j],
+                    block.rhap.slice(s![j, ..]),
+                );
             }
 
-            let rec_real: Real = rec.into();
-
-            // Transition
-            let mut sprob_tot = sprob.iter().sum::<Real>() * (rec_real / m_real);
-            sprob_norecom *= Real::from(1. - rec);
-            let mut complement: Real = (1. - rec).into();
-
-            // Lazy normalization (same as minimac)
-            #[cfg(not(feature = "leak-resistant"))]
-            if sprob_tot < NORM_THRESHOLD {
-                sprob_tot *= NORM_SCALE_FACTOR;
-                complement *= NORM_SCALE_FACTOR;
-                sprob_norecom *= NORM_SCALE_FACTOR;
-            }
-
-            #[cfg(feature = "leak-resistant")]
-            {
-                let scale = sprob_tot
-                    .tp_lt(&NORM_THRESHOLD)
-                    .select(NORM_SCALE_FACTOR, Real::ONE);
-                sprob_tot *= scale;
-                complement *= scale;
-                sprob_norecom *= scale;
-            }
-
-            sprob.assign(&(complement * &sprob + &block.clustsize * sprob_tot));
+            transition(
+                rec,
+                m_real,
+                block.clustsize.view(),
+                sprob.view_mut(),
+                sprob_norecom.view_mut(),
+            );
 
             // Impute very first position (edge case)
             // TODO fix this
@@ -492,28 +466,20 @@ pub fn impute_chunk(
                 //let res = p1.safe_div(p1.safe_add(p0));
 
                 //imputed[0] = res;
-
                 imputed[0] = Real::NAN;
             }
         }
 
         let sprob_recom = &sprob - &sprob_norecom;
 
-        //#[cfg(not(feature = "leak-resistant"))]
-        //let sprob_norecom =
-        //sprob_recom
-        //.into_iter()
-        //.map(|p| p.max(0.))
-        //.collect::<Vec<_>>();
-
-        // Unfold probabilities
         if b > 0 {
-            Zip::from(&mut sprob_all)
-                .and(&block.indmap)
-                .apply(|p, &ui| {
-                    *p = (sprob_recom[ui] / block.clustsize[ui])
-                        + (*p * (sprob_norecom[ui] / (sprob_first[ui] + E)));
-                });
+            unfold_probabilities(
+                block,
+                sprob_all.view_mut(),
+                sprob_first.view(),
+                sprob_recom.view(),
+                sprob_norecom.view(),
+            );
         }
 
         var_offset += block.nvar - 1;

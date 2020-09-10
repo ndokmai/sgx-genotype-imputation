@@ -1,20 +1,16 @@
 #![feature(const_fn)]
 
-#[cfg(feature = "leak-resistant")]
-mod bacc;
-//#[cfg(feature = "leak-resistant")]
-//mod const_time;
 mod impute;
 mod input;
 mod ref_panel;
 mod symbol;
 
 #[cfg(feature = "leak-resistant")]
+mod bacc;
+#[cfg(feature = "leak-resistant")]
 mod ln_fixed;
-#[cfg(feature = "leak-resistant")]
+#[cfg(all(feature = "leak-resistant", debug_assertions))]
 mod ln_wrapped;
-#[cfg(feature = "leak-resistant")]
-mod wrapped;
 
 pub use crate::impute::*;
 pub use crate::input::*;

@@ -2,7 +2,7 @@
 use derive_more::*;
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;
-use timing_shield::{TpBool, TpOrd, TpCondSwap};
+use timing_shield::{TpBool, TpCondSwap, TpOrd};
 
 #[derive(PartialEq, PartialOrd, Clone, Copy, FromStr, Display, Debug)]
 pub struct LnWrapped(f64);
@@ -103,25 +103,25 @@ num_op!(std::ops::Add::add, Mul, mul);
 num_op!(std::ops::Sub::sub, Div, div);
 
 impl TpOrd for LnWrapped {
-    fn tp_lt(&self, rhs: &Self) -> TpBool { 
+    fn tp_lt(&self, rhs: &Self) -> TpBool {
         TpBool::protect(self.0 < rhs.0)
     }
 
-    fn tp_lt_eq(&self, rhs: &Self) -> TpBool { 
+    fn tp_lt_eq(&self, rhs: &Self) -> TpBool {
         TpBool::protect(self.0 <= rhs.0)
     }
 
-    fn tp_gt(&self, rhs: &Self) -> TpBool { 
+    fn tp_gt(&self, rhs: &Self) -> TpBool {
         TpBool::protect(self.0 > rhs.0)
     }
-    
-    fn tp_gt_eq(&self, rhs: &Self) -> TpBool { 
+
+    fn tp_gt_eq(&self, rhs: &Self) -> TpBool {
         TpBool::protect(self.0 >= rhs.0)
     }
 }
 
 impl TpCondSwap for LnWrapped {
-    fn tp_cond_swap(cond: TpBool, a: &mut Self, b: &mut Self) { 
+    fn tp_cond_swap(cond: TpBool, a: &mut Self, b: &mut Self) {
         if cond.expose() {
             std::mem::swap(a, b);
         }
@@ -145,7 +145,6 @@ impl Into<f64> for LnWrapped {
         self.0.exp()
     }
 }
-
 
 impl num_traits::identities::Zero for LnWrapped {
     fn zero() -> Self {

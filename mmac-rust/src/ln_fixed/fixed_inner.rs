@@ -47,6 +47,46 @@ macro_rules! impl_approx {
                 out
             }
 
+            //fn $f(self) -> Self {
+                //use $f::*;
+                //let a = self.inner.expose();
+                //let mut x = a;
+                //let mut step = Self::leaky_from_i64(MAX_INPUT as i64 / 2).inner.expose();
+                //let mut pos_flags = [0i64; N_SPLIT];
+                //let mut flag = 1i64;
+                //for pos_flag in pos_flags.iter_mut() {
+                    //x -= step * (2 * flag - 1);
+                    //flag = (x >= 0) as i64;
+                    //*pos_flag = flag;
+                    //step /= 2;
+                //}
+
+                //let mut selector = [0i64; N_SEG];
+                //for i in 0..N_SEG {
+                    //let mut sel = 1i64;
+                    //for j in 0..N_SPLIT {
+                        //let bit = ((i & (1 << (N_SPLIT - j - 1))) > 0) as i64;
+                        //sel *= bit * pos_flags[j] + (1 - bit) * (1 - pos_flags[j]);
+                    //}
+                    //selector[i] = sel;
+                //}
+
+                //let mut coeffs = [0i64; POLY_DEG + 1];
+                //for i in 0..N_SEG {
+                    //for j in 0..(POLY_DEG + 1) {
+                        //coeffs[j] += Self::[<$f_cap _COEFFS>][i][j].inner.expose() * selector[i];
+                    //}
+                //}
+
+                //let mut res = coeffs[0] + ((a * coeffs[1]) >> F::USIZE);
+                //let mut a_pow = a;
+                //for &c in coeffs.iter().skip(2) {
+                    //a_pow = a_pow.wrapping_mul(a);
+                    //res += (a_pow * c) >> F::USIZE;
+                //}
+                //new_self_raw!(res)
+            //}
+
             fn $f(self) -> Self {
                 use $f::*;
                 let mut x = self;

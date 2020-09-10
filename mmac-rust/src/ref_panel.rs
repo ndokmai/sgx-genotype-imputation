@@ -15,7 +15,7 @@ pub struct Block {
     pub nuniq: usize,
     pub clustsize: Array1<Real>,
     pub rhap: Array2<i8>,
-    pub eprob: Array1<f64>,
+    //pub eprob: Array1<f64>,
     pub rprob: Array1<f64>,
     pub afreq: Array1<f64>,
 }
@@ -51,7 +51,7 @@ impl Block {
         let mut clustsize = Array1::<usize>::zeros(nuniq);
         indmap.iter().for_each(|&v| clustsize[v] += 1);
 
-        let mut eprob = Vec::<f64>::with_capacity(nvar);
+        //let mut eprob = Vec::<f64>::with_capacity(nvar);
         let mut rprob = Vec::<f64>::with_capacity(nvar);
         let mut rhap = Array2::<i8>::zeros((nvar, nuniq));
         let mut afreq = Vec::<f64>::with_capacity(nvar);
@@ -63,19 +63,19 @@ impl Block {
             let tok = iter.nth(7).unwrap(); // info field
             let tok = tok.split(";").collect::<Vec<_>>();
 
-            let mut new_eprob = None;
+            //let mut new_eprob = None;
             let mut new_rprob = None;
 
             for t in tok {
                 let t = t.split("=").collect::<Vec<_>>();
                 match t[0] {
-                    "Err" => new_eprob = Some(t[1].parse::<f64>().unwrap()),
+                    //"Err" => new_eprob = Some(t[1].parse::<f64>().unwrap()),
                     "Recom" => new_rprob = Some(t[1].parse::<f64>().unwrap()),
                     _ => continue,
                 }
             }
 
-            eprob.push(new_eprob.unwrap());
+            //eprob.push(new_eprob.unwrap());
             rprob.push(new_rprob.unwrap());
 
             let data = iter.next().unwrap(); // data for one variant
@@ -119,7 +119,7 @@ impl Block {
                     .collect::<Vec<_>>(),
             ),
             rhap,
-            eprob: Array1::from(eprob),
+            //eprob: Array1::from(eprob),
             rprob: Array1::from(rprob),
             afreq: Array1::from(afreq),
         }
