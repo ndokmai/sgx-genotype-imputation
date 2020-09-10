@@ -181,7 +181,7 @@ impl<F: Unsigned> FixedInner<F> {
     /// lme(a, b) = ln(exp(a) - exp(b))
     pub fn lme(self, other: Self) -> Self {
         let z = self - other;
-        self + z.ome().fp_log_lt_one()
+        self + z.ome().log_lt_one()
     }
 
     // Piecewise linear approximation to f(a) = ln(1 + exp(-a))
@@ -195,7 +195,7 @@ impl<F: Unsigned> FixedInner<F> {
     impl_approx! {OME, ome}
 
     /// Approximate log function for domain 0 < a <= 1
-    fn fp_log_lt_one(self) -> Self {
+    fn log_lt_one(self) -> Self {
         let onehalf = Self::leaky_from_i64(1) >> 1;
         let mut z = self;
         let mut z_scaled = Self::ZERO;
@@ -455,9 +455,9 @@ mod tests {
     }
 
     #[test]
-    fn fp_log_lt_one_test() {
+    fn log_lt_one_test() {
         let a = 0.1234f64;
-        let res = F::leaky_from_f64(a).fp_log_lt_one().leaky_into_f64();
+        let res = F::leaky_from_f64(a).log_lt_one().leaky_into_f64();
         let reference = a.ln();
         assert!((reference - res).abs() < 1e-7);
     }
