@@ -12,6 +12,7 @@ impl<F: Unsigned> LnFixed<F> {
     //TODO remove this
     pub const ONE: Self = Self(FixedInner::ZERO);
     pub const NAN: Self = Self(FixedInner::NAN);
+    pub const EPS: Self = Self(FixedInner::leaky_from_f64(-69.0775527898)); // 1e-30
 
     pub fn leaky_from_f64(f: f64) -> Self {
         Self(FixedInner::leaky_from_f64(f.ln()))
@@ -190,7 +191,7 @@ impl<F: Unsigned> std::iter::Sum<LnFixed<F>> for LnFixed<F> {
             }
         }
         if accu.is_empty() {
-            panic!("Sum of empty iterator.");
+            return LnFixed::EPS;
         }
         if accu.len() == 1 {
             return accu[0];
