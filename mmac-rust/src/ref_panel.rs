@@ -1,7 +1,5 @@
 use crate::Real;
 use ndarray::{Array1, Array2};
-#[cfg(feature = "leak-resistant")]
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Result};
@@ -9,8 +7,6 @@ use std::path::Path;
 
 pub struct Block {
     pub indmap: Array1<usize>,
-    #[cfg(feature = "leak-resistant")]
-    pub rev_indmap: HashMap<usize, Vec<usize>>,
     pub nvar: usize,
     pub nuniq: usize,
     pub clustsize: Array1<Real>,
@@ -97,19 +93,8 @@ impl Block {
             );
         }
 
-        #[cfg(feature = "leak-resistant")]
-        let mut rev_indmap = HashMap::new();
-
-        #[cfg(feature = "leak-resistant")]
-        for (i, j) in indmap.iter().enumerate() {
-            let target = rev_indmap.entry(*j).or_insert(Vec::new());
-            target.push(i);
-        }
-
         Self {
             indmap: Array1::from(indmap),
-            #[cfg(feature = "leak-resistant")]
-            rev_indmap,
             nvar,
             nuniq,
             clustsize: Array1::from(

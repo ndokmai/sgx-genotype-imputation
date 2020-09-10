@@ -38,15 +38,11 @@ fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real
 
     #[cfg(feature = "leak-resistant")]
     {
-        let sprob = (0..block.nuniq)
-            .map(|i| {
-                block.rev_indmap[&i]
-                    .iter()
-                    .map(|&j| sprob_all[j])
-                    .sum::<Real>()
-            })
-            .collect::<Vec<Real>>();
-        Array1::from(sprob)
+        let mut sprob = vec![Bacc::init(); block.nuniq];
+        for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
+            sprob[ind] += p;
+        }
+        Array1::from(sprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
     }
 }
 
@@ -347,15 +343,16 @@ pub fn impute_chunk(
 
         #[cfg(feature = "leak-resistant")]
         let jprob = {
-            let jprob = (0..block.nuniq)
-                .map(|i| {
-                    block.rev_indmap[&i]
-                        .iter()
-                        .map(|&j| fwdcache_all[[b, j]] * sprob_all[j])
-                        .sum::<Real>()
-                })
-                .collect::<Vec<Real>>();
-            Array1::from(jprob)
+            let mut jprob = vec![Bacc::init(); block.nuniq];
+            for ((&ind, &c), &p) in block
+                .indmap
+                .iter()
+                .zip(fwdcache_all.slice(s![b, ..]))
+                .zip(sprob_all.iter())
+            {
+                jprob[ind] += c * p;
+            }
+            Array1::from(jprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
         };
 
         let mut sprob = fold_probabilities(sprob_all.view(), &block);

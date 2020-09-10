@@ -1,6 +1,7 @@
 use std::ops::{Add, AddAssign};
 
 /// Balanced accumulator
+#[derive(Clone)]
 pub struct Bacc<T>(Vec<Option<T>>);
 
 impl<T> Bacc<T>
