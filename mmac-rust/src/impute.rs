@@ -407,7 +407,6 @@ pub fn impute_chunk(
             );
 
             // Impute very first position (edge case)
-            // TODO fix this
             if b == 0 && j == 1 {
                 imputed[0] = impute(
                     jprob.view(),
