@@ -2,6 +2,7 @@
 use derive_more::*;
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;
+use timing_shield::{TpBool, TpOrd, TpCondSwap};
 
 #[derive(PartialEq, PartialOrd, Clone, Copy, FromStr, Display, Debug)]
 pub struct LnWrapped(f64);
@@ -10,26 +11,6 @@ impl LnWrapped {
     pub const ONE: Self = Self(0.);
     pub const ZERO: Self = Self(f64::NEG_INFINITY);
     pub const NAN: Self = Self(f64::NAN);
-
-    #[inline]
-    pub fn safe_add(self, other: Self) -> Self {
-        self + other
-    }
-
-    #[inline]
-    pub fn safe_sub(self, other: Self) -> Self {
-        self - other
-    }
-
-    #[inline]
-    pub fn safe_mul(self, other: Self) -> Self {
-        self * other
-    }
-
-    #[inline]
-    pub fn safe_div(self, other: Self) -> Self {
-        self / other
-    }
 
     #[inline]
     pub fn is_zero(self) -> bool {
@@ -43,6 +24,30 @@ impl LnWrapped {
 
     pub fn from_f64_no_ln(f: f64) -> Self {
         Self(f)
+    }
+
+    pub fn select_from_4_f64(
+        cond0: TpBool,
+        cond1: TpBool,
+        a11: f64,
+        a10: f64,
+        a01: f64,
+        a00: f64,
+    ) -> Self {
+        let out = if cond0.expose() {
+            if cond1.expose() {
+                a11
+            } else {
+                a10
+            }
+        } else {
+            if cond1.expose() {
+                a01
+            } else {
+                a00
+            }
+        };
+        Self(out.ln())
     }
 }
 
@@ -97,6 +102,32 @@ num_op!(lme, Sub, sub);
 num_op!(std::ops::Add::add, Mul, mul);
 num_op!(std::ops::Sub::sub, Div, div);
 
+impl TpOrd for LnWrapped {
+    fn tp_lt(&self, rhs: &Self) -> TpBool { 
+        TpBool::protect(self.0 < rhs.0)
+    }
+
+    fn tp_lt_eq(&self, rhs: &Self) -> TpBool { 
+        TpBool::protect(self.0 <= rhs.0)
+    }
+
+    fn tp_gt(&self, rhs: &Self) -> TpBool { 
+        TpBool::protect(self.0 > rhs.0)
+    }
+    
+    fn tp_gt_eq(&self, rhs: &Self) -> TpBool { 
+        TpBool::protect(self.0 >= rhs.0)
+    }
+}
+
+impl TpCondSwap for LnWrapped {
+    fn tp_cond_swap(cond: TpBool, a: &mut Self, b: &mut Self) { 
+        if cond.expose() {
+            std::mem::swap(a, b);
+        }
+    }
+}
+
 impl From<u32> for LnWrapped {
     fn from(u: u32) -> Self {
         Self(f64::from(u).ln())
@@ -114,6 +145,7 @@ impl Into<f64> for LnWrapped {
         self.0.exp()
     }
 }
+
 
 impl num_traits::identities::Zero for LnWrapped {
     fn zero() -> Self {

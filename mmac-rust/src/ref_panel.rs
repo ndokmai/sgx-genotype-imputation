@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Result};
 use std::path::Path;
 
-#[derive(PartialEq, Debug)]
 pub struct Block {
     pub indmap: Array1<usize>,
     #[cfg(feature = "leak-resistant")]

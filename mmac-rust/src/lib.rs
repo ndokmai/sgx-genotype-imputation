@@ -2,8 +2,8 @@
 
 #[cfg(feature = "leak-resistant")]
 mod bacc;
-#[cfg(feature = "leak-resistant")]
-mod const_time;
+//#[cfg(feature = "leak-resistant")]
+//mod const_time;
 mod impute;
 mod input;
 mod ref_panel;

@@ -1,14 +1,12 @@
 #[cfg(feature = "leak-resistant")]
 use crate::bacc::Bacc;
-#[cfg(feature = "leak-resistant")]
-use crate::const_time;
 use crate::ref_panel::RefPanel;
 use crate::{Input, Real};
 use lazy_static::lazy_static;
 use ndarray::{s, Array1, Array2, ArrayView1, Zip};
 use std::convert::TryFrom;
 #[cfg(feature = "leak-resistant")]
-use timing_shield::TpEq;
+use timing_shield::{TpEq, TpOrd};
 
 pub const BACKGROUND: f64 = 1e-5;
 
@@ -92,16 +90,16 @@ pub fn impute_chunk(
                 .into();
 
                 #[cfg(feature = "leak-resistant")]
-                let emi: Real = const_time::select_4_no_ln(
+                let emi = Real::select_from_4_f64(
                     tsym.tp_eq(&1),
                     tsym.tp_eq(&block.rhap[[0, ind]]),
-                    ((1. - err) + err * block.afreq[0] + BACKGROUND).ln(),
-                    (err * block.afreq[0] + BACKGROUND).ln(),
-                    ((1. - err) + err * (1. - block.afreq[0]) + BACKGROUND).ln(),
-                    (err * (1. - block.afreq[0]) + BACKGROUND).ln(),
+                    (1. - err) + err * block.afreq[0] + BACKGROUND,
+                    err * block.afreq[0] + BACKGROUND,
+                    (1. - err) + err * (1. - block.afreq[0]) + BACKGROUND,
+                    err * (1. - block.afreq[0]) + BACKGROUND,
                 );
 
-                *p = emi.into();
+                *p = emi;
             });
     }
 
@@ -163,10 +161,21 @@ pub fn impute_chunk(
                     let mut complement: Real = (1. - rec).into();
 
                     // Lazy normalization (same as minimac)
+                    #[cfg(not(feature = "leak-resistant"))]
                     if sprob_tot < NORM_THRESHOLD {
                         sprob_tot *= NORM_SCALE_FACTOR;
                         complement *= NORM_SCALE_FACTOR;
                         sprob_norecom *= NORM_SCALE_FACTOR;
+                    }
+
+                    #[cfg(feature = "leak-resistant")]
+                    {
+                        let scale = sprob_tot
+                            .tp_lt(&NORM_THRESHOLD)
+                            .select(NORM_SCALE_FACTOR, Real::ONE);
+                        sprob_tot *= scale;
+                        complement *= scale;
+                        sprob_norecom *= scale;
                     }
 
                     sprob.assign(&(complement * &sprob + &block.clustsize * sprob_tot));
@@ -192,21 +201,20 @@ pub fn impute_chunk(
                             .and(&rhap_row)
                             .apply(|p, p_norecom, &rhap| {
                                 #[cfg(not(feature = "leak-resistant"))]
-                                let emi: Real = if tsym == rhap {
+                                let emi = if tsym == rhap {
                                     (1. - err) + err * afreq + BACKGROUND
                                 } else {
                                     err * afreq + BACKGROUND
-                                }
-                                .into();
+                                };
 
                                 #[cfg(feature = "leak-resistant")]
-                                let emi: Real = const_time::select_4_no_ln(
+                                let emi = Real::select_from_4_f64(
                                     tsym.tp_eq(&1),
                                     tsym.tp_eq(&rhap),
-                                    ((1. - err) + err * block_afreq + BACKGROUND).ln(),
-                                    (err * block_afreq + BACKGROUND).ln(),
-                                    ((1. - err) + err * (1. - block_afreq) + BACKGROUND).ln(),
-                                    (err * (1. - block_afreq) + BACKGROUND).ln(),
+                                    (1. - err) + err * block_afreq + BACKGROUND,
+                                    err * block_afreq + BACKGROUND,
+                                    (1. - err) + err * (1. - block_afreq) + BACKGROUND,
+                                    err * (1. - block_afreq) + BACKGROUND,
                                 );
 
                                 *p *= emi;
@@ -221,11 +229,6 @@ pub fn impute_chunk(
             );
 
         let sprob_recom = &sprob - &sprob_norecom;
-        //#[cfg(not(feature = "leak-resistant"))]
-        //let sprob_norecom = sprob_recom
-        //.into_iter()
-        //.map(|p| p.max(0.))
-        //.collect::<Vec<_>>();
 
         // Unfold probabilities
         if b < blocks.len() - 1 {
@@ -380,21 +383,20 @@ pub fn impute_chunk(
                     .and(block.rhap.slice(s![j, ..]))
                     .apply(|p, p_norecom, &rhap| {
                         #[cfg(not(feature = "leak-resistant"))]
-                        let emi: Real = if tsym == rhap {
+                        let emi = if tsym == rhap {
                             (1. - err) + err * afreq + BACKGROUND
                         } else {
                             err * afreq + BACKGROUND
-                        }
-                        .into();
+                        };
 
                         #[cfg(feature = "leak-resistant")]
-                        let emi: Real = const_time::select_4_no_ln(
+                        let emi = Real::select_from_4_f64(
                             tsym.tp_eq(&1),
                             tsym.tp_eq(&rhap),
-                            ((1. - err) + err * block.afreq[j] + BACKGROUND).ln(),
-                            (err * block.afreq[j] + BACKGROUND).ln(),
-                            ((1. - err) + err * (1. - block.afreq[j]) + BACKGROUND).ln(),
-                            (err * (1. - block.afreq[j]) + BACKGROUND).ln(),
+                            (1. - err) + err * block.afreq[j] + BACKGROUND,
+                            err * block.afreq[j] + BACKGROUND,
+                            (1. - err) + err * (1. - block.afreq[j]) + BACKGROUND,
+                            err * (1. - block.afreq[j]) + BACKGROUND,
                         );
 
                         *p *= emi;
@@ -410,10 +412,21 @@ pub fn impute_chunk(
             let mut complement: Real = (1. - rec).into();
 
             // Lazy normalization (same as minimac)
+            #[cfg(not(feature = "leak-resistant"))]
             if sprob_tot < NORM_THRESHOLD {
                 sprob_tot *= NORM_SCALE_FACTOR;
                 complement *= NORM_SCALE_FACTOR;
                 sprob_norecom *= NORM_SCALE_FACTOR;
+            }
+
+            #[cfg(feature = "leak-resistant")]
+            {
+                let scale = sprob_tot
+                    .tp_lt(&NORM_THRESHOLD)
+                    .select(NORM_SCALE_FACTOR, Real::ONE);
+                sprob_tot *= scale;
+                complement *= scale;
+                sprob_norecom *= scale;
             }
 
             sprob.assign(&(complement * &sprob + &block.clustsize * sprob_tot));
