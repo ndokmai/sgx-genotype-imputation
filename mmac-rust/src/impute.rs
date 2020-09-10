@@ -257,6 +257,10 @@ pub fn impute_chunk(
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
 
+        // Cache forward probabilities at first position
+        fwdprob.row_mut(0).assign(&sprob);
+        fwdprob_norecom.row_mut(0).assign(&sprob_norecom);
+
         // Walk
         Zip::from(block.rprob.slice(s![..block.nvar - 1]))
             .and(thap.slice(s![var_offset + 1..var_offset + block.nvar]))
@@ -405,65 +409,17 @@ pub fn impute_chunk(
             // Impute very first position (edge case)
             // TODO fix this
             if b == 0 && j == 1 {
-                //#[cfg(not(feature = "leak-resistant"))]
-                //let combined = {
-                //let x = &fwdprob_norecom.slice(s![0, ..]) * &sprob_norecom;
-                //&jprob * &(x.clone() / (fwdprob_first * &sprob_first + E))
-                //+ (&fwdprob.slice(s![0, ..]) * &sprob - x) / &block.clustsize
-                //};
-
-                //#[cfg(feature = "leak-resistant")]
-                //let combined = {
-                //let len = jprob.len();
-                //Array1::from(
-                //(0..len)
-                //.map(|i| {
-                //let x =
-                //fwdprob_norecom.slice(s![0, ..])[i].safe_mul(sprob_norecom[i]);
-                //jprob[i]
-                //.safe_mul(x.safe_div(fwdprob_first[i] * sprob_first[i] + E))
-                //.safe_add(
-                //(fwdprob.slice(s![0, ..])[i]
-                //.safe_mul(sprob[i])
-                //.safe_sub(x))
-                //.safe_div(block.clustsize[i]),
-                //)
-                //})
-                //.collect::<Vec<Real>>(),
-                //)
-                //};
-
-                //let (p0, p1) = Zip::from(&combined).and(block.rhap.slice(s![0, ..])).fold(
-                //(ZERO, ZERO),
-                //|mut acc, &c, &rsym| {
-                //#[cfg(not(feature = "leak-resistant"))]
-                //if rsym == 1 {
-                //acc.1 += c;
-                //acc
-                //} else {
-                //acc.0 += c;
-                //acc
-                //}
-
-                //#[cfg(feature = "leak-resistant")]
-                //if rsym == 1 {
-                //acc.1 = acc.1.safe_add(c);
-                //acc
-                //} else {
-                //acc.0 = acc.0.safe_add(c);
-                //acc
-                //}
-                //},
-                //);
-
-                //#[cfg(not(feature = "leak-resistant"))]
-                //let res = p1 / (p1 + p0);
-
-                //#[cfg(feature = "leak-resistant")]
-                //let res = p1.safe_div(p1.safe_add(p0));
-
-                //imputed[0] = res;
-                imputed[0] = Real::NAN;
+                imputed[0] = impute(
+                    jprob.view(),
+                    block.clustsize.view(),
+                    block.rhap.slice(s![0, ..]),
+                    fwdprob.slice(s![0, ..]),
+                    fwdprob_first.view(),
+                    fwdprob_norecom.slice(s![0, ..]),
+                    sprob.view(),
+                    sprob_first.view(),
+                    sprob_norecom.view(),
+                );
             }
         }
 
