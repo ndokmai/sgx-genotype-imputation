@@ -10,6 +10,7 @@ pub struct LnWrapped(f64);
 impl LnWrapped {
     pub const ONE: Self = Self(0.);
     pub const ZERO: Self = Self(f64::NEG_INFINITY);
+    pub const EPS: Self = Self(-69.0775527898);
     pub const NAN: Self = Self(f64::NAN);
 
     #[inline]

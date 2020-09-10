@@ -1,18 +1,20 @@
+use crate::Real;
 use std::ops::{Add, AddAssign};
 
 /// Balanced accumulator
 #[derive(Clone)]
-pub struct Bacc<T>(Vec<Option<T>>);
+pub struct Bacc(Vec<Option<Real>>);
 
-impl<T> Bacc<T>
-where
-    T: std::iter::Sum,
-{
+impl Bacc {
     pub fn init() -> Self {
         Self(Vec::new())
     }
 
-    pub fn result(self) -> T {
+    pub fn result(self) -> Real {
+        if self.0.iter().filter(|v| v.is_some()).count() == 0 {
+            return Real::EPS;
+        }
+
         self.0
             .into_iter()
             .filter(|v| v.is_some())
@@ -21,22 +23,16 @@ where
     }
 }
 
-impl<T> Add<T> for Bacc<T>
-where
-    T: Add<Output = T> + Copy,
-{
+impl Add<Real> for Bacc {
     type Output = Self;
-    fn add(mut self, val: T) -> Self::Output {
+    fn add(mut self, val: Real) -> Self::Output {
         self.add_assign(val);
         self
     }
 }
 
-impl<T> AddAssign<T> for Bacc<T>
-where
-    T: Add<Output = T> + Copy,
-{
-    fn add_assign(&mut self, val: T) {
+impl AddAssign<Real> for Bacc {
+    fn add_assign(&mut self, val: Real) {
         let mut val = Some(val);
         for slot in self.0.iter_mut() {
             if slot.is_some() {
