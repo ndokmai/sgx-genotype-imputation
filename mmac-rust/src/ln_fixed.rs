@@ -75,6 +75,17 @@ impl<F: Unsigned> LnFixed<F> {
     pub const ZERO: Self = new_self!(i64::MIN);
     pub const ONE: Self = new_self!(0);
     pub const NAN: Self = new_self!(i64::MAX);
+    pub const EPS: Self = LnFixed::from_f64_inner(-69.0775527898); // ln(1e-30)
+
+    #[inline]
+    const fn from_i64_inner(i: i64) -> Self {
+        new_self!(i << F::USIZE)
+    }
+
+    #[inline]
+    const fn from_f64_inner(f: f64) -> Self {
+        new_self!((f * (1 << F::USIZE) as f64) as i64)
+    }
 }
 
 impl<F: Unsigned + PartialOrd> LnFixed<F> {
@@ -312,16 +323,6 @@ impl<F: Unsigned + PartialOrd> LnFixed<F> {
         res
     }
 
-    #[inline]
-    const fn from_i64_inner(i: i64) -> Self {
-        new_self!(i << F::USIZE)
-    }
-
-    #[inline]
-    const fn from_f64_inner(f: f64) -> Self {
-        new_self!((f * (1 << F::USIZE) as f64) as i64)
-    }
-
     const NLS_COEFFS: [[Self; NLS_POLY_DEG + 1]; NLS_N_SEG] = Self::nsl_coeffs_fixed();
 
     const fn nsl_coeffs_fixed() -> [[Self; NLS_POLY_DEG + 1]; NLS_N_SEG] {
@@ -484,7 +485,7 @@ impl<F: Unsigned + PartialOrd> std::iter::Sum<LnFixed<F>> for LnFixed<F> {
             }
         }
         if accu.is_empty() {
-            panic!("Sum of empty iterator.");
+            return LnFixed::EPS;
         }
         if accu.len() == 1 {
             return accu[0];
