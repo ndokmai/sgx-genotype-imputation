@@ -41,9 +41,7 @@ impl Block {
         let nuniq = nuniq.unwrap();
 
         iter.next().unwrap(); // skip one column
-        let indmap = iter
-            .map(|s| s.parse::<u16>().unwrap())
-            .collect::<Vec<_>>();
+        let indmap = iter.map(|s| s.parse::<u16>().unwrap()).collect::<Vec<_>>();
 
         let mut clustsize = Array1::<u16>::zeros(nuniq);
         indmap.iter().for_each(|&v| clustsize[v as usize] += 1);
@@ -103,12 +101,7 @@ impl Block {
             indmap: Array1::from(indmap),
             nvar,
             nuniq,
-            clustsize: Array1::from(
-                clustsize
-                    .into_iter()
-                    .map(|&v| v.into())
-                    .collect::<Vec<_>>(),
-            ),
+            clustsize: Array1::from(clustsize.into_iter().map(|&v| v.into()).collect::<Vec<_>>()),
             rhap,
             //eprob: Array1::from(eprob),
             rprob: Array1::from(rprob),

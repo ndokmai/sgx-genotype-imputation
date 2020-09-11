@@ -74,11 +74,20 @@ fn single_emission(tsym: Input, block_afreq: f32, rhap: i8) -> Real {
 }
 
 fn first_emission(tsym: Input, block: &Block, mut sprob_all: ArrayViewMut1<Real>) {
-    let afreq = block.afreq[0];
-    Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
-        let emi = single_emission(tsym, afreq, block.rhap[0][i as usize] as i8);
-        *p = emi;
-    });
+    #[cfg(not(feature = "leak-resistant"))]
+    let cond = tsym != -1;
+
+    #[cfg(feature = "leak-resistant")]
+    // TODO: fix this leakage
+    let cond = tsym.expose() != -1;
+
+    if cond {
+        let afreq = block.afreq[0];
+        Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
+            let emi = single_emission(tsym, afreq, block.rhap[0][i as usize] as i8);
+            *p = emi;
+        });
+    }
 }
 
 fn later_emission(
@@ -88,15 +97,24 @@ fn later_emission(
     block_afreq: f32,
     rhap_row: &BitSlice,
 ) {
-    sprob
-        .iter_mut()
-        .zip(sprob_norecom.iter_mut())
-        .zip(rhap_row.iter())
-        .for_each(|((p, p_norecom), &rhap)| {
-            let emi = single_emission(tsym, block_afreq, rhap as i8);
-            *p *= emi;
-            *p_norecom *= emi;
-        });
+    #[cfg(not(feature = "leak-resistant"))]
+    let cond = tsym != -1;
+
+    // TODO: fix this leakage
+    #[cfg(feature = "leak-resistant")]
+    let cond = tsym.expose() != -1;
+
+    if cond {
+        sprob
+            .iter_mut()
+            .zip(sprob_norecom.iter_mut())
+            .zip(rhap_row.iter())
+            .for_each(|((p, p_norecom), &rhap)| {
+                let emi = single_emission(tsym, block_afreq, rhap as i8);
+                *p *= emi;
+                *p_norecom *= emi;
+            });
+    }
 }
 
 /// Lazy normalization (same as minimac)
@@ -235,17 +253,7 @@ pub fn impute_chunk(
     let mut var_offset: usize = 0;
 
     // First position emission (edge case)
-    let tsym = thap[0];
-    #[cfg(not(feature = "leak-resistant"))]
-    let cond = tsym != -1;
-
-    #[cfg(feature = "leak-resistant")]
-    // TODO: fix this leakage
-    let cond = tsym.expose() != -1;
-
-    if cond {
-        first_emission(tsym, &blocks[0], sprob_all.view_mut());
-    }
+    first_emission(thap[0], &blocks[0], sprob_all.view_mut());
 
     for b in 0..blocks.len() {
         let block = &blocks[b];
@@ -282,22 +290,13 @@ pub fn impute_chunk(
                         sprob_norecom.view_mut(),
                     );
 
-                    #[cfg(not(feature = "leak-resistant"))]
-                    let cond = tsym != -1;
-
-                    // TODO: fix this leakage
-                    #[cfg(feature = "leak-resistant")]
-                    let cond = tsym.expose() != -1;
-
-                    if cond {
-                        later_emission(
-                            tsym,
-                            sprob.view_mut(),
-                            sprob_norecom.view_mut(),
-                            block_afreq,
-                            rhap_row,
-                        );
-                    }
+                    later_emission(
+                        tsym,
+                        sprob.view_mut(),
+                        sprob_norecom.view_mut(),
+                        block_afreq,
+                        rhap_row,
+                    );
 
                     // Cache forward probabilities
                     fwdprob_row.assign(&sprob);
@@ -384,23 +383,13 @@ pub fn impute_chunk(
                 sprob_norecom.view(),
             );
 
-            let tsym = thap[varind];
-            #[cfg(not(feature = "leak-resistant"))]
-            let cond = tsym != -1;
-
-            // TODO: fix this leakage
-            #[cfg(feature = "leak-resistant")]
-            let cond = tsym.expose() != -1;
-
-            if cond {
-                later_emission(
-                    tsym,
-                    sprob.view_mut(),
-                    sprob_norecom.view_mut(),
-                    block.afreq[j],
-                    block.rhap[j].as_bitslice(),
-                );
-            }
+            later_emission(
+                thap[varind],
+                sprob.view_mut(),
+                sprob_norecom.view_mut(),
+                block.afreq[j],
+                block.rhap[j].as_bitslice(),
+            );
 
             transition(
                 rec,
