@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader, Result};
 use std::path::Path;
 
 pub struct Block {
-    pub indmap: Array1<usize>,
+    pub indmap: Array1<u16>,
     pub nvar: usize,
     pub nuniq: usize,
     pub clustsize: Array1<Real>,
@@ -42,11 +42,11 @@ impl Block {
 
         iter.next().unwrap(); // skip one column
         let indmap = iter
-            .map(|s| s.parse::<usize>().unwrap())
+            .map(|s| s.parse::<u16>().unwrap())
             .collect::<Vec<_>>();
 
-        let mut clustsize = Array1::<usize>::zeros(nuniq);
-        indmap.iter().for_each(|&v| clustsize[v] += 1);
+        let mut clustsize = Array1::<u16>::zeros(nuniq);
+        indmap.iter().for_each(|&v| clustsize[v as usize] += 1);
 
         //let mut eprob = Vec::<f64>::with_capacity(nvar);
         let mut rprob = Vec::<f32>::with_capacity(nvar);
@@ -106,7 +106,7 @@ impl Block {
             clustsize: Array1::from(
                 clustsize
                     .into_iter()
-                    .map(|&v| (v as u16).into())
+                    .map(|&v| v.into())
                     .collect::<Vec<_>>(),
             ),
             rhap,

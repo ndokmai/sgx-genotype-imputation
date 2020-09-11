@@ -32,7 +32,7 @@ fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real
     {
         let mut sprob = Array1::<Real>::zeros(block.nuniq);
         for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-            sprob[ind] += p;
+            sprob[ind as usize] += p;
         }
         sprob
     }
@@ -41,7 +41,7 @@ fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real
     {
         let mut sprob = vec![Bacc::init(); block.nuniq];
         for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-            sprob[ind] += p;
+            sprob[ind as usize] += p;
         }
         Array1::from(sprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
     }
@@ -76,7 +76,7 @@ fn single_emission(tsym: Input, block_afreq: f32, rhap: i8) -> Real {
 fn first_emission(tsym: Input, block: &Block, mut sprob_all: ArrayViewMut1<Real>) {
     let afreq = block.afreq[0];
     Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
-        let emi = single_emission(tsym, afreq, block.rhap[0][i] as i8);
+        let emi = single_emission(tsym, afreq, block.rhap[0][i as usize] as i8);
         *p = emi;
     });
 }
@@ -153,6 +153,7 @@ fn unfold_probabilities(
     Zip::from(&mut sprob_all)
         .and(&block.indmap)
         .apply(|p, &ui| {
+            let ui = ui as usize;
             *p = (sprob_recom[ui] / block.clustsize[ui])
                 + (*p * (sprob_norecom[ui] / (sprob_first[ui] + E)));
         });
@@ -343,7 +344,7 @@ pub fn impute_chunk(
                 .and(fwdcache_all.slice(s![b, ..]))
                 .and(&sprob_all)
                 .apply(|&ind, &c, &p| {
-                    jprob[ind] += c * p;
+                    jprob[ind as usize] += c * p;
                 });
             jprob
         };
@@ -357,7 +358,7 @@ pub fn impute_chunk(
                 .zip(fwdcache_all.slice(s![b, ..]))
                 .zip(sprob_all.iter())
             {
-                jprob[ind] += c * p;
+                jprob[ind as usize] += c * p;
             }
             Array1::from(jprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
         };
