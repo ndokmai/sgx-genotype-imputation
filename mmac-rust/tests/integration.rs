@@ -5,7 +5,12 @@ use std::path::Path;
 
 const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf";
 const INPUT_FILE: &'static str = "test_data/small_input.txt";
+
+#[cfg(not(feature = "leak-resistant"))]
 const REF_OUTPUT_FILE: &'static str = "test_data/small_output_ref.txt";
+
+#[cfg(feature = "leak-resistant")]
+const REF_OUTPUT_FILE: &'static str = "test_data/small_output_log_ref.txt";
 
 #[cfg(not(feature = "leak-resistant"))]
 const EPSILON: f64 = f64::EPSILON;

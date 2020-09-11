@@ -102,12 +102,16 @@ fn later_emission(
 /// Lazy normalization (same as minimac)
 #[allow(non_snake_case)]
 fn normalize(sprob_tot: &mut Real, complement: &mut Real, mut sprob_norecom: ArrayViewMut1<Real>) {
-
     #[cfg(not(feature = "leak-resistant"))]
-    if *sprob_tot < NORM_THRESHOLD {
-        *sprob_tot *= *_NORM_SCALE_FACTOR;
-        *complement *= *_NORM_SCALE_FACTOR;
-        sprob_norecom *= *_NORM_SCALE_FACTOR;
+    {
+        let NORM_THRESHOLD = *_NORM_THRESHOLD;
+        let NORM_SCALE_FACTOR = *_NORM_SCALE_FACTOR;
+
+        if *sprob_tot < NORM_THRESHOLD {
+            *sprob_tot *= NORM_SCALE_FACTOR;
+            *complement *= NORM_SCALE_FACTOR;
+            sprob_norecom *= NORM_SCALE_FACTOR;
+        }
     }
 
     #[cfg(feature = "leak-resistant")]
