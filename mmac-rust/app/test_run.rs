@@ -36,7 +36,7 @@ fn main() {
     eprintln!("Input load time: {} ms", (Instant::now() - now).as_millis());
 
     let now = std::time::Instant::now();
-    let imputed = impute_chunk(chunk_id, thap.view(), &ref_panel);
+    let imputed = impute_chunk(chunk_id, thap.view(), ref_panel);
     eprintln!("Imputation time: {} ms", (Instant::now() - now).as_millis());
 
     let mut file = File::create(OUTPUT_FILE).unwrap();

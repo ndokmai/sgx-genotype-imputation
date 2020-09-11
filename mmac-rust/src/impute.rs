@@ -233,22 +233,21 @@ fn impute(
 pub fn impute_chunk(
     _chunk_id: usize,
     thap: ArrayView1<Input>,
-    ref_panel: &RefPanel,
+    mut ref_panel: RefPanel,
 ) -> Array1<Real> {
     assert!(thap.len() == ref_panel.n_markers);
 
-    let blocks = &ref_panel.blocks;
+    let blocks = &mut ref_panel.blocks;
     let m = ref_panel.n_haps;
     let m_real: Real = u16::try_from(m).unwrap().into();
 
-    let mut imputed = unsafe { Array1::<Real>::uninitialized(thap.len()) };
 
     let mut fwdcache = Vec::new();
     let mut fwdcache_norecom = Vec::new();
     let mut fwdcache_first = Vec::new();
-    let mut fwdcache_all = unsafe { Array2::<Real>::uninitialized((blocks.len(), m)) };
+    let mut fwdcache_all = Vec::new();
 
-    /* Forward pass */
+    // Forward pass
     let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
     let mut var_offset: usize = 0;
 
@@ -258,7 +257,7 @@ pub fn impute_chunk(
     for b in 0..blocks.len() {
         let block = &blocks[b];
 
-        fwdcache_all.slice_mut(s![b, ..]).assign(&sprob_all); // save cache
+        fwdcache_all.push(sprob_all.clone());
 
         let mut fwdprob = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
         let mut fwdprob_norecom =
@@ -324,15 +323,16 @@ pub fn impute_chunk(
         var_offset += block.nvar - 1;
     }
 
-    /* Backward pass */
-    // TODO: refactor to remove redundancy with forward pass
+    let mut imputed = unsafe { Array1::<Real>::uninitialized(thap.len()) };
+
+    // Backward pass
     let mut sprob_all = Array1::<Real>::ones(m);
     let mut var_offset: usize = 0;
     for b in (0..blocks.len()).rev() {
-        let block = &blocks[b];
-        let fwdprob = &fwdcache[b];
-        let fwdprob_norecom = &fwdcache_norecom[b];
-        let fwdprob_first = &fwdcache_first[b];
+        let block = blocks.pop().unwrap();
+        let fwdprob = fwdcache.pop().unwrap();
+        let fwdprob_norecom = fwdcache_norecom.pop().unwrap();
+        let fwdprob_first = fwdcache_first.pop().unwrap();
 
         // Precompute joint fwd-bwd term for imputation;
         // same as "Constants" variable in minimac
@@ -340,7 +340,7 @@ pub fn impute_chunk(
         let jprob = {
             let mut jprob = Array1::<Real>::zeros(block.nuniq);
             Zip::from(&block.indmap)
-                .and(fwdcache_all.slice(s![b, ..]))
+                .and(&fwdcache_all[b])
                 .and(&sprob_all)
                 .apply(|&ind, &c, &p| {
                     jprob[ind as usize] += c * p;
@@ -354,7 +354,7 @@ pub fn impute_chunk(
             for ((&ind, &c), &p) in block
                 .indmap
                 .iter()
-                .zip(fwdcache_all.slice(s![b, ..]))
+                .zip(&fwdcache_all[b])
                 .zip(sprob_all.iter())
             {
                 jprob[ind as usize] += c * p;
@@ -419,14 +419,13 @@ pub fn impute_chunk(
 
         if b > 0 {
             unfold_probabilities(
-                block,
+                &block,
                 sprob_all.view_mut(),
                 sprob_first.view(),
                 sprob_recom.view(),
                 sprob_norecom.view(),
             );
         }
-
         var_offset += block.nvar - 1;
     }
     imputed
