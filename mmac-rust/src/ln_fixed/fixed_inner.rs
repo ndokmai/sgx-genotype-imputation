@@ -174,7 +174,7 @@ impl<F: Unsigned> FixedInner<F> {
     /// lse(a, b) = ln(exp(a) + exp(b))
     pub fn lse(self, other: Self) -> Self {
         let max_val = (self.tp_gt_eq(&other)).select(self, other);
-        let diff = (max_val << 1) - self - other;
+        let diff = (self.tp_gt_eq(&other)).select(self - other, other - self);
         max_val + Self::nls(diff)
     }
 

@@ -1,5 +1,6 @@
 use crate::Real;
-use ndarray::{Array1, Array2};
+use bitvec::prelude::{bitvec, BitVec, Lsb0};
+use ndarray::Array1;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Result};
@@ -10,7 +11,7 @@ pub struct Block {
     pub nvar: usize,
     pub nuniq: usize,
     pub clustsize: Array1<Real>,
-    pub rhap: Array2<i8>,
+    pub rhap: Vec<BitVec>,
     //pub eprob: Array1<f64>,
     pub rprob: Array1<f64>,
     pub afreq: Array1<f64>,
@@ -49,11 +50,11 @@ impl Block {
 
         //let mut eprob = Vec::<f64>::with_capacity(nvar);
         let mut rprob = Vec::<f64>::with_capacity(nvar);
-        let mut rhap = Array2::<i8>::zeros((nvar, nuniq));
+        let mut rhap: Vec<BitVec> = Vec::new();
         let mut afreq = Vec::<f64>::with_capacity(nvar);
 
         // read block data
-        for cur_var in 0..nvar {
+        for _ in 0..nvar {
             let line = lines_iter.next().unwrap().unwrap();
             let mut iter = line.split_ascii_whitespace();
             let tok = iter.nth(7).unwrap(); // info field
@@ -77,17 +78,23 @@ impl Block {
             let data = iter.next().unwrap(); // data for one variant
             let mut alt_count = 0;
 
-            data.chars().enumerate().for_each(|(ind, b)| {
-                let geno = match b {
-                    '0' => 0,
-                    '1' => 1,
-                    _ => panic!("Invalid file format"),
-                };
-                rhap[[cur_var, ind]] = geno;
-                if geno == 1 {
-                    alt_count += clustsize[ind];
-                }
-            });
+            let mut new_rhap_row = bitvec![Lsb0, usize; 0; nuniq];
+            data.chars()
+                .zip(new_rhap_row.as_mut_bitslice())
+                .enumerate()
+                .for_each(|(ind, (b, mut r))| {
+                    let geno = match b {
+                        '0' => 0,
+                        '1' => 1,
+                        _ => panic!("Invalid file format"),
+                    };
+                    //rhap[[cur_var, ind]] = geno;
+                    *r = geno == 1;
+                    if geno == 1 {
+                        alt_count += clustsize[ind];
+                    }
+                });
+            rhap.push(new_rhap_row);
             afreq.push(
                 f64::from(u32::try_from(alt_count).unwrap()) / f64::from(u32::try_from(m).unwrap()),
             );

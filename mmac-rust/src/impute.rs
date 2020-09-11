@@ -1,6 +1,7 @@
 use crate::ref_panel::RefPanel;
 use crate::Block;
 use crate::{Input, Real};
+use bitvec::prelude::BitSlice;
 use lazy_static::lazy_static;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::convert::TryFrom;
@@ -75,7 +76,7 @@ fn single_emission(tsym: Input, block_afreq: f64, rhap: i8) -> Real {
 fn first_emission(tsym: Input, block: &Block, mut sprob_all: ArrayViewMut1<Real>) {
     let afreq = block.afreq[0];
     Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
-        let emi = single_emission(tsym, afreq, block.rhap[[0, i]]);
+        let emi = single_emission(tsym, afreq, block.rhap[0][i] as i8);
         *p = emi;
     });
 }
@@ -85,13 +86,14 @@ fn later_emission(
     mut sprob: ArrayViewMut1<Real>,
     mut sprob_norecom: ArrayViewMut1<Real>,
     block_afreq: f64,
-    rhap_row: ArrayView1<i8>,
+    rhap_row: &BitSlice,
 ) {
-    Zip::from(&mut sprob)
-        .and(&mut sprob_norecom)
-        .and(rhap_row)
-        .apply(|p, p_norecom, &rhap| {
-            let emi = single_emission(tsym, block_afreq, rhap);
+    sprob
+        .iter_mut()
+        .zip(sprob_norecom.iter_mut())
+        .zip(rhap_row.iter())
+        .for_each(|((p, p_norecom), &rhap)| {
+            let emi = single_emission(tsym, block_afreq, rhap as i8);
             *p *= emi;
             *p_norecom *= emi;
         });
@@ -160,7 +162,7 @@ fn unfold_probabilities(
 fn impute(
     jprob: ArrayView1<Real>,
     clustsize: ArrayView1<Real>,
-    rhap_row: ArrayView1<i8>,
+    rhap_row: &BitSlice,
     fwdprob_row: ArrayView1<Real>,
     fwdprob_first: ArrayView1<Real>,
     fwdprob_norecom_row: ArrayView1<Real>,
@@ -176,10 +178,11 @@ fn impute(
     };
 
     #[cfg(not(feature = "leak-resistant"))]
-    let (p0, p1) = Zip::from(&combined)
-        .and(rhap_row)
-        .fold((0., 0.), |mut acc, &c, &rsym| {
-            if rsym == 1 {
+    let (p0, p1) = combined
+        .iter()
+        .zip(rhap_row.iter())
+        .fold((0., 0.), |mut acc, (&c, &rsym)| {
+            if rsym {
                 acc.1 += c;
                 acc
             } else {
@@ -190,10 +193,10 @@ fn impute(
 
     #[cfg(feature = "leak-resistant")]
     let (p0, p1) = {
-        let (p0, p1) = Zip::from(&combined).and(rhap_row).fold(
+        let (p0, p1) = combined.iter().zip(rhap_row.iter()).fold(
             (Bacc::init(), Bacc::init()),
-            |mut acc, &c, &rsym| {
-                if rsym == 1 {
+            |mut acc, (&c, &rsym)| {
+                if rsym {
                     acc.1 += c;
                     acc
                 } else {
@@ -265,7 +268,7 @@ pub fn impute_chunk(
         Zip::from(block.rprob.slice(s![..block.nvar - 1]))
             .and(thap.slice(s![var_offset + 1..var_offset + block.nvar]))
             .and(block.afreq.slice(s![1..]))
-            .and(block.rhap.slice(s![1.., ..]).genrows())
+            .and(&block.rhap[1..])
             .and(fwdprob.slice_mut(s![1.., ..]).genrows_mut())
             .and(fwdprob_norecom.slice_mut(s![1.., ..]).genrows_mut())
             .apply(
@@ -371,7 +374,7 @@ pub fn impute_chunk(
             imputed[varind] = impute(
                 jprob.view(),
                 block.clustsize.view(),
-                block.rhap.slice(s![j, ..]),
+                block.rhap[j].as_bitslice(),
                 fwdprob.slice(s![j, ..]),
                 fwdprob_first.view(),
                 fwdprob_norecom.slice(s![j, ..]),
@@ -394,7 +397,7 @@ pub fn impute_chunk(
                     sprob.view_mut(),
                     sprob_norecom.view_mut(),
                     block.afreq[j],
-                    block.rhap.slice(s![j, ..]),
+                    block.rhap[j].as_bitslice(),
                 );
             }
 
@@ -411,7 +414,7 @@ pub fn impute_chunk(
                 imputed[0] = impute(
                     jprob.view(),
                     block.clustsize.view(),
-                    block.rhap.slice(s![0, ..]),
+                    block.rhap[0].as_bitslice(),
                     fwdprob.slice(s![0, ..]),
                     fwdprob_first.view(),
                     fwdprob_norecom.slice(s![0, ..]),
