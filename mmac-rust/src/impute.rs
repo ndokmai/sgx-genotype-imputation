@@ -100,24 +100,20 @@ fn later_emission(
 /// Lazy normalization (same as minimac)
 #[allow(non_snake_case)]
 fn normalize(sprob_tot: &mut Real, complement: &mut Real, mut sprob_norecom: ArrayViewMut1<Real>) {
-    let NORM_THRESHOLD = *_NORM_THRESHOLD;
-    let NORM_SCALE_FACTOR = *_NORM_SCALE_FACTOR;
 
     #[cfg(not(feature = "leak-resistant"))]
     if *sprob_tot < NORM_THRESHOLD {
-        *sprob_tot *= NORM_SCALE_FACTOR;
-        *complement *= NORM_SCALE_FACTOR;
-        sprob_norecom *= NORM_SCALE_FACTOR;
+        *sprob_tot *= *_NORM_SCALE_FACTOR;
+        *complement *= *_NORM_SCALE_FACTOR;
+        sprob_norecom *= *_NORM_SCALE_FACTOR;
     }
 
     #[cfg(feature = "leak-resistant")]
     {
-        let scale = sprob_tot
-            .tp_lt(&NORM_THRESHOLD)
-            .select(NORM_SCALE_FACTOR, Real::ONE);
-        *sprob_tot *= scale;
-        *complement *= scale;
-        sprob_norecom *= scale;
+        // no need for lazy normalization in log domain
+        *complement /= *sprob_tot;
+        sprob_norecom /= *sprob_tot;
+        *sprob_tot = Real::ONE;
     }
 }
 
