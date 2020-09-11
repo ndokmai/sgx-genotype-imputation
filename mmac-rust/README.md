@@ -27,10 +27,5 @@ cargo bench
 ## Leak-resistant `feature`
 To use `leak-resistant` feature, run any `cargo` commands in the following way:
 ```bash
-FTFP_INTBITS={num_bits} cargo {...} --features leak-resistant
-```
-
-where `{num_bits}` is the number of bits `libfixtimefixpoint` uses to represent the integer portion. (Refer to Figure 11 in [this paper](https://people.eecs.berkeley.edu/~dkohlbre/papers/subnormal.pdf) for more details.) For example,
-```bash
-time FTFP_INTBITS=30 cargo run --release --bin test_run --features leak-resistant
+cargo {...} --features leak-resistant
 ```
