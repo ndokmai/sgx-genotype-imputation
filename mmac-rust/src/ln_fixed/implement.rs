@@ -12,36 +12,36 @@ impl<F: Unsigned> LnFixed<F> {
     //TODO remove this
     pub const ONE: Self = Self(FixedInner::ZERO);
     pub const NAN: Self = Self(FixedInner::NAN);
-    pub const EPS: Self = Self(FixedInner::leaky_from_f64(-69.0775527898)); // 1e-30
+    pub const EPS: Self = Self(FixedInner::leaky_from_f32(-69.0775527898)); // 1e-30
 
-    pub fn leaky_from_f64(f: f64) -> Self {
-        Self(FixedInner::leaky_from_f64(f.ln()))
+    pub fn leaky_from_f32(f: f32) -> Self {
+        Self(FixedInner::leaky_from_f32(f.ln()))
     }
 
     pub fn leaky_from_i64(i: i64) -> Self {
-        Self(FixedInner::leaky_from_f64((i as f64).ln()))
+        Self(FixedInner::leaky_from_f32((i as f32).ln()))
     }
 
-    pub fn leaky_into_f64(self) -> f64 {
+    pub fn leaky_into_f32(self) -> f32 {
         if self.leaky_is_nan() {
-            return f64::NAN;
+            return f32::NAN;
         }
-        self.0.leaky_into_f64().exp()
+        self.0.leaky_into_f32().exp()
     }
 
     pub fn leaky_is_nan(self) -> bool {
         self.0.tp_eq(&Self::NAN.0).expose()
     }
 
-    pub fn select_from_4_f64(
+    pub fn select_from_4_f32(
         cond0: TpBool,
         cond1: TpBool,
-        a11: f64,
-        a10: f64,
-        a01: f64,
-        a00: f64,
+        a11: f32,
+        a10: f32,
+        a01: f32,
+        a00: f32,
     ) -> Self {
-        Self(FixedInner::<F>::select_from_4_f64(
+        Self(FixedInner::<F>::select_from_4_f32(
             cond0,
             cond1,
             a11.ln(),
@@ -52,21 +52,21 @@ impl<F: Unsigned> LnFixed<F> {
     }
 }
 
-impl<F: Unsigned> From<u32> for LnFixed<F> {
-    fn from(u: u32) -> Self {
+impl<F: Unsigned> From<u16> for LnFixed<F> {
+    fn from(u: u16) -> Self {
         Self::leaky_from_i64(u as i64)
     }
 }
 
-impl<F: Unsigned> From<f64> for LnFixed<F> {
-    fn from(f: f64) -> Self {
-        Self::leaky_from_f64(f)
+impl<F: Unsigned> From<f32> for LnFixed<F> {
+    fn from(f: f32) -> Self {
+        Self::leaky_from_f32(f)
     }
 }
 
-impl<F: Unsigned> Into<f64> for LnFixed<F> {
-    fn into(self) -> f64 {
-        self.leaky_into_f64()
+impl<F: Unsigned> Into<f32> for LnFixed<F> {
+    fn into(self) -> f32 {
+        self.leaky_into_f32()
     }
 }
 
@@ -149,7 +149,7 @@ impl<F: Unsigned> TpCondSwap for LnFixed<F> {
 
 impl<F: Unsigned> std::fmt::Display for LnFixed<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let i: f64 = (*self).leaky_into_f64();
+        let i: f32 = (*self).leaky_into_f32();
         i.fmt(f)
     }
 }
@@ -217,31 +217,31 @@ mod tests {
 
     #[test]
     fn conversion_test() {
-        let reference = 123.123456789123456789f64;
-        let a = F::leaky_from_f64(reference);
-        let res = a.leaky_into_f64();
+        let reference = 123.123456789123456789f32;
+        let a = F::leaky_from_f32(reference);
+        let res = a.leaky_into_f32();
         assert!((reference - res).abs() < 1e-3);
     }
 
     #[test]
     fn add_test() {
-        let a = 2f64.exp();
-        let b = 1f64.exp();
+        let a = 2f32.exp();
+        let b = 1f32.exp();
         let reference = a + b;
-        let res = (F::leaky_from_f64(a) + F::leaky_from_f64(b)).leaky_into_f64();
+        let res = (F::leaky_from_f32(a) + F::leaky_from_f32(b)).leaky_into_f32();
         assert!((reference - res).abs() < 1e-2);
     }
 
     #[test]
     fn sub_test() {
-        let a = 3f64.exp();
-        let b = 1f64.exp();
+        let a = 3f32.exp();
+        let b = 1f32.exp();
         let reference = a - b;
-        let res = (F::leaky_from_f64(a) - F::leaky_from_f64(b)).leaky_into_f64();
+        let res = (F::leaky_from_f32(a) - F::leaky_from_f32(b)).leaky_into_f32();
         assert!((reference - res).abs() < 1e-2);
     }
 
-    macro_rules! select_from_4_f64_test_single {
+    macro_rules! select_from_4_f32_test_single {
         ($cond1: expr, $cond2: expr) => {
             let reference = if $cond1 {
                 if $cond2 {
@@ -256,7 +256,7 @@ mod tests {
                     4.
                 }
             };
-            let res = F::select_from_4_f64(
+            let res = F::select_from_4_f32(
                 TpBool::protect($cond1),
                 TpBool::protect($cond2),
                 1.,
@@ -264,16 +264,16 @@ mod tests {
                 3.,
                 4.,
             )
-            .leaky_into_f64();
+            .leaky_into_f32();
             assert!((reference - res).abs() < 1e-5);
         };
     }
 
     #[test]
-    fn select_from_4_f64_test() {
-        select_from_4_f64_test_single! {false, false};
-        select_from_4_f64_test_single! {true, false};
-        select_from_4_f64_test_single! {false, true};
-        select_from_4_f64_test_single! {true, true};
+    fn select_from_4_f32_test() {
+        select_from_4_f32_test_single! {false, false};
+        select_from_4_f32_test_single! {true, false};
+        select_from_4_f32_test_single! {false, true};
+        select_from_4_f32_test_single! {true, true};
     }
 }

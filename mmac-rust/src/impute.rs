@@ -15,11 +15,11 @@ mod leak_resistant_mod {
 #[cfg(feature = "leak-resistant")]
 use leak_resistant_mod::*;
 
-const BACKGROUND: f64 = 1e-5;
-const ERR: f64 = 0.00999;
-const __NORM_THRESHOLD: f64 = 1e-20;
-const __NORM_SCALE_FACTOR: f64 = 1e10;
-const __E: f64 = 1e-30;
+const BACKGROUND: f32 = 1e-5;
+const ERR: f32 = 0.00999;
+const __NORM_THRESHOLD: f32 = 1e-20;
+const __NORM_SCALE_FACTOR: f32 = 1e10;
+const __E: f32 = 1e-30;
 
 lazy_static! {
     static ref _NORM_THRESHOLD: Real = __NORM_THRESHOLD.into();
@@ -47,7 +47,7 @@ fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real
     }
 }
 
-fn single_emission(tsym: Input, block_afreq: f64, rhap: i8) -> Real {
+fn single_emission(tsym: Input, block_afreq: f32, rhap: i8) -> Real {
     #[cfg(not(feature = "leak-resistant"))]
     {
         let afreq = if tsym == 1 {
@@ -63,7 +63,7 @@ fn single_emission(tsym: Input, block_afreq: f64, rhap: i8) -> Real {
     }
 
     #[cfg(feature = "leak-resistant")]
-    Real::select_from_4_f64(
+    Real::select_from_4_f32(
         tsym.tp_eq(&1),
         tsym.tp_eq(&rhap),
         (1. - ERR) + ERR * block_afreq + BACKGROUND,
@@ -85,7 +85,7 @@ fn later_emission(
     tsym: Input,
     mut sprob: ArrayViewMut1<Real>,
     mut sprob_norecom: ArrayViewMut1<Real>,
-    block_afreq: f64,
+    block_afreq: f32,
     rhap_row: &BitSlice,
 ) {
     sprob
@@ -124,7 +124,7 @@ fn normalize(sprob_tot: &mut Real, complement: &mut Real, mut sprob_norecom: Arr
 }
 
 fn transition(
-    rec: f64,
+    rec: f32,
     m_real: Real,
     clustsize: ArrayView1<Real>,
     mut sprob: ArrayViewMut1<Real>,
@@ -220,7 +220,7 @@ pub fn impute_chunk(
 
     let blocks = &ref_panel.blocks;
     let m = ref_panel.n_haps;
-    let m_real: Real = u32::try_from(m).unwrap().into();
+    let m_real: Real = u16::try_from(m).unwrap().into();
 
     let mut imputed = unsafe { Array1::<Real>::uninitialized(thap.len()) };
 

@@ -13,15 +13,15 @@ const REF_OUTPUT_FILE: &'static str = "test_data/small_output_ref.txt";
 const REF_OUTPUT_FILE: &'static str = "test_data/small_output_log_ref.txt";
 
 #[cfg(not(feature = "leak-resistant"))]
-const EPSILON: f64 = f64::EPSILON;
+const EPSILON: f32 = 1e-5;
 
 #[cfg(feature = "leak-resistant")]
-const EPSILON: f64 = 1e-2;
+const EPSILON: f32 = 1e-2;
 
-fn load_ref_output() -> Vec<f64> {
+fn load_ref_output() -> Vec<f32> {
     let file = BufReader::new(File::open(REF_OUTPUT_FILE).unwrap());
     file.lines()
-        .map(|line| line.unwrap().parse::<f64>().unwrap())
+        .map(|line| line.unwrap().parse::<f32>().unwrap())
         .collect()
 }
 
@@ -38,7 +38,7 @@ fn integration_test() {
         .into_iter()
         .zip(ref_imputed.into_iter())
         .all(|(&a, b)| {
-            let a: f64 = a.into();
+            let a: f32 = a.into();
             println!("a = {}", a);
             println!("b = {}", b);
             (a - b).abs() < EPSILON || (a.is_nan() && b.is_nan())

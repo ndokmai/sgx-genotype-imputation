@@ -18,7 +18,7 @@ pub use crate::ref_panel::*;
 
 #[cfg(not(feature = "leak-resistant"))]
 mod inner {
-    pub type Real = f64;
+    pub type Real = f32;
     pub type Input = i8;
 }
 

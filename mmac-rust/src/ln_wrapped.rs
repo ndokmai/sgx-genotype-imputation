@@ -5,13 +5,13 @@ use paste::paste;
 use timing_shield::{TpBool, TpCondSwap, TpOrd};
 
 #[derive(PartialEq, PartialOrd, Clone, Copy, FromStr, Display, Debug)]
-pub struct LnWrapped(f64);
+pub struct LnWrapped(f32);
 
 impl LnWrapped {
     pub const ONE: Self = Self(0.);
-    pub const ZERO: Self = Self(f64::NEG_INFINITY);
+    pub const ZERO: Self = Self(f32::NEG_INFINITY);
     pub const EPS: Self = Self(-69.0775527898);
-    pub const NAN: Self = Self(f64::NAN);
+    pub const NAN: Self = Self(f32::NAN);
 
     #[inline]
     pub fn is_zero(self) -> bool {
@@ -23,17 +23,17 @@ impl LnWrapped {
         Self(self.0.max(other.0))
     }
 
-    pub fn from_f64_no_ln(f: f64) -> Self {
+    pub fn from_f32_no_ln(f: f32) -> Self {
         Self(f)
     }
 
-    pub fn select_from_4_f64(
+    pub fn select_from_4_f32(
         cond0: TpBool,
         cond1: TpBool,
-        a11: f64,
-        a10: f64,
-        a01: f64,
-        a00: f64,
+        a11: f32,
+        a10: f32,
+        a01: f32,
+        a00: f32,
     ) -> Self {
         let out = if cond0.expose() {
             if cond1.expose() {
@@ -89,12 +89,12 @@ macro_rules! num_op {
 }
 
 #[inline]
-fn lse(a: f64, b: f64) -> f64 {
+fn lse(a: f32, b: f32) -> f32 {
     (a.exp() + b.exp()).ln()
 }
 
 #[inline]
-fn lme(a: f64, b: f64) -> f64 {
+fn lme(a: f32, b: f32) -> f32 {
     (a.exp() - b.exp()).ln()
 }
 
@@ -129,20 +129,20 @@ impl TpCondSwap for LnWrapped {
     }
 }
 
-impl From<u32> for LnWrapped {
-    fn from(u: u32) -> Self {
-        Self(f64::from(u).ln())
+impl From<u16> for LnWrapped {
+    fn from(u: u16) -> Self {
+        Self(f32::from(u).ln())
     }
 }
 
-impl From<f64> for LnWrapped {
-    fn from(f: f64) -> Self {
+impl From<f32> for LnWrapped {
+    fn from(f: f32) -> Self {
         Self(f.ln())
     }
 }
 
-impl Into<f64> for LnWrapped {
-    fn into(self) -> f64 {
+impl Into<f32> for LnWrapped {
+    fn into(self) -> f32 {
         self.0.exp()
     }
 }
@@ -170,7 +170,7 @@ impl std::iter::Sum<LnWrapped> for LnWrapped {
     where
         I: Iterator<Item = LnWrapped>,
     {
-        Self(iter.fold(0f64, |acc, x| acc + x.0.exp()).ln())
+        Self(iter.fold(0f32, |acc, x| acc + x.0.exp()).ln())
     }
 }
 
@@ -179,6 +179,6 @@ impl<'a> std::iter::Sum<&'a LnWrapped> for LnWrapped {
     where
         I: Iterator<Item = &'a LnWrapped>,
     {
-        Self(iter.fold(0f64, |acc, x| acc + x.0.exp()).ln())
+        Self(iter.fold(0f32, |acc, x| acc + x.0.exp()).ln())
     }
 }

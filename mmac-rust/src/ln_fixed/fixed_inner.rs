@@ -33,7 +33,7 @@ macro_rules! impl_approx {
                 loop {
                     let mut j = 0;
                     loop {
-                        out[i][j] = Self::leaky_from_f64(COEFFS[i][j]);
+                        out[i][j] = Self::leaky_from_f32(COEFFS[i][j]);
                         j += 1;
                         if j == POLY_DEG + 1 {
                             break;
@@ -140,33 +140,33 @@ impl<F: Unsigned> FixedInner<F> {
     pub const ZERO: Self = new_self_raw!(0i64);
     pub const NAN: Self = new_self_raw!(i64::MAX);
 
-    pub const fn leaky_from_f64(f: f64) -> Self {
-        new_self_raw!((f * (1 << F::USIZE) as f64) as i64)
+    pub const fn leaky_from_f32(f: f32) -> Self {
+        new_self_raw!((f * (1 << F::USIZE) as f32) as i64)
     }
 
     pub const fn leaky_from_i64(i: i64) -> Self {
         new_self_raw!(i << F::USIZE)
     }
 
-    pub fn leaky_into_f64(self) -> f64 {
-        self.inner.expose() as f64 / (F::USIZE as f64).exp2()
+    pub fn leaky_into_f32(self) -> f32 {
+        self.inner.expose() as f32 / (F::USIZE as f32).exp2()
     }
 
-    pub fn select_from_4_f64(
+    pub fn select_from_4_f32(
         cond0: TpBool,
         cond1: TpBool,
-        a11: f64,
-        a10: f64,
-        a01: f64,
-        a00: f64,
+        a11: f32,
+        a10: f32,
+        a01: f32,
+        a00: f32,
     ) -> Self {
         let a0 = cond0.select(
-            Self::leaky_from_f64(a10).inner,
-            Self::leaky_from_f64(a00).inner,
+            Self::leaky_from_f32(a10).inner,
+            Self::leaky_from_f32(a00).inner,
         );
         let a1 = cond0.select(
-            Self::leaky_from_f64(a11).inner,
-            Self::leaky_from_f64(a01).inner,
+            Self::leaky_from_f32(a11).inner,
+            Self::leaky_from_f32(a01).inner,
         );
         new_self!(cond1.select(a1, a0))
     }
@@ -219,8 +219,8 @@ impl<F: Unsigned> FixedInner<F> {
         let zs2 = zs * zs;
         let zs3 = zs * zs2;
 
-        let taylor_approx = zs - (zs2 >> 1) + zs3 * Self::leaky_from_f64(1. / 3.);
-        let ln2 = Self::leaky_from_f64(0.69314718055994528623);
+        let taylor_approx = zs - (zs2 >> 1) + zs3 * Self::leaky_from_f32(1. / 3.);
+        let ln2 = Self::leaky_from_f32(0.69314718055994528623);
         taylor_approx - ln2 * shift.as_i64()
     }
 }
@@ -363,7 +363,7 @@ mod nls {
     pub const POLY_DEG: usize = 2;
 
     #[rustfmt::skip]
-    pub const COEFFS: [[f64; POLY_DEG+1]; N_SEG] = [
+    pub const COEFFS: [[f32; POLY_DEG+1]; N_SEG] = [
         [0.69273948669433593750, -0.49560832977294921875, 0.11664772033691406250],
         [0.64667129516601562500, -0.40890026092529296875, 0.07470607757568359375],
         [0.49358558654785156250, -0.25441551208496093750, 0.03541278839111328125],
@@ -391,7 +391,7 @@ mod ome {
     pub const POLY_DEG: usize = 2;
 
     #[rustfmt::skip]
-    pub const COEFFS: [[f64; POLY_DEG+1]; N_SEG] = [
+    pub const COEFFS: [[f32; POLY_DEG+1]; N_SEG] = [
         [0.00156021118164062500, 0.96903133392333984375, -0.36837196350097656250],
         [0.06437397003173828125, 0.76515388488769531250, -0.19717502593994140625],
         [0.20199489593505859375, 0.54148197174072265625, -0.10554027557373046875],
@@ -418,59 +418,59 @@ mod tests {
 
     #[test]
     fn conversion_test() {
-        let reference = 123.123456789123456789f64;
-        let a = F::leaky_from_f64(reference);
-        let res = a.leaky_into_f64();
+        let reference = 123.123456789123456789f32;
+        let a = F::leaky_from_f32(reference);
+        let res = a.leaky_into_f32();
         assert!((reference - res).abs() < 1e-6);
     }
 
     #[test]
     fn nls_test() {
-        let a = 0.1234f64;
-        let res = F::leaky_from_f64(a).nls().leaky_into_f64();
+        let a = 0.1234f32;
+        let res = F::leaky_from_f32(a).nls().leaky_into_f32();
         let reference = (1. + 1. / a.exp()).ln();
         assert!((reference - res).abs() < 1e-5);
     }
 
     #[test]
     fn lse_test() {
-        let a = 11f64;
-        let b = 9f64;
+        let a = 11f32;
+        let b = 9f32;
         let reference = (a.exp() + b.exp()).ln();
-        let res = F::leaky_from_f64(a)
-            .lse(F::leaky_from_f64(b))
-            .leaky_into_f64();
+        let res = F::leaky_from_f32(a)
+            .lse(F::leaky_from_f32(b))
+            .leaky_into_f32();
         assert!((reference - res).abs() < 1e-3);
     }
 
     #[test]
     fn lme_test() {
-        let a = 11f64;
-        let b = 9f64;
+        let a = 11f32;
+        let b = 9f32;
         let reference = (a.exp() - b.exp()).ln();
-        let res = F::leaky_from_f64(a)
-            .lme(F::leaky_from_f64(b))
-            .leaky_into_f64();
+        let res = F::leaky_from_f32(a)
+            .lme(F::leaky_from_f32(b))
+            .leaky_into_f32();
         assert!((reference - res).abs() < 1e-3);
     }
 
     #[test]
     fn log_lt_one_test() {
-        let a = 0.1234f64;
-        let res = F::leaky_from_f64(a).log_lt_one().leaky_into_f64();
+        let a = 0.1234f32;
+        let res = F::leaky_from_f32(a).log_lt_one().leaky_into_f32();
         let reference = a.ln();
         assert!((reference - res).abs() < 1e-7);
     }
 
     #[test]
     fn ome_test() {
-        let a = 0.1234f64;
-        let res = F::leaky_from_f64(a).ome().leaky_into_f64();
+        let a = 0.1234f32;
+        let res = F::leaky_from_f32(a).ome().leaky_into_f32();
         let reference = 1. - 1. / a.exp();
         assert!((reference - res).abs() < 1e-3);
     }
 
-    macro_rules! select_from_4_f64_test_single {
+    macro_rules! select_from_4_f32_test_single {
         ($cond1: expr, $cond2: expr) => {
             let reference = if $cond1 {
                 if $cond2 {
@@ -485,7 +485,7 @@ mod tests {
                     4.
                 }
             };
-            let res = F::select_from_4_f64(
+            let res = F::select_from_4_f32(
                 TpBool::protect($cond1),
                 TpBool::protect($cond2),
                 1.,
@@ -493,16 +493,16 @@ mod tests {
                 3.,
                 4.,
             )
-            .leaky_into_f64();
-            assert!((reference - res).abs() < f64::EPSILON);
+            .leaky_into_f32();
+            assert!((reference - res).abs() < f32::EPSILON);
         };
     }
 
     #[test]
-    fn select_from_4_f64_test() {
-        select_from_4_f64_test_single! {false, false};
-        select_from_4_f64_test_single! {true, false};
-        select_from_4_f64_test_single! {false, true};
-        select_from_4_f64_test_single! {true, true};
+    fn select_from_4_f32_test() {
+        select_from_4_f32_test_single! {false, false};
+        select_from_4_f32_test_single! {true, false};
+        select_from_4_f32_test_single! {false, true};
+        select_from_4_f32_test_single! {true, true};
     }
 }

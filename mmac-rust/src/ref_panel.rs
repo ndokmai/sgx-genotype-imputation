@@ -13,8 +13,8 @@ pub struct Block {
     pub clustsize: Array1<Real>,
     pub rhap: Vec<BitVec>,
     //pub eprob: Array1<f64>,
-    pub rprob: Array1<f64>,
-    pub afreq: Array1<f64>,
+    pub rprob: Array1<f32>,
+    pub afreq: Array1<f32>,
 }
 
 impl Block {
@@ -49,9 +49,9 @@ impl Block {
         indmap.iter().for_each(|&v| clustsize[v] += 1);
 
         //let mut eprob = Vec::<f64>::with_capacity(nvar);
-        let mut rprob = Vec::<f64>::with_capacity(nvar);
+        let mut rprob = Vec::<f32>::with_capacity(nvar);
         let mut rhap: Vec<BitVec> = Vec::new();
-        let mut afreq = Vec::<f64>::with_capacity(nvar);
+        let mut afreq = Vec::<f32>::with_capacity(nvar);
 
         // read block data
         for _ in 0..nvar {
@@ -67,7 +67,7 @@ impl Block {
                 let t = t.split("=").collect::<Vec<_>>();
                 match t[0] {
                     //"Err" => new_eprob = Some(t[1].parse::<f64>().unwrap()),
-                    "Recom" => new_rprob = Some(t[1].parse::<f64>().unwrap()),
+                    "Recom" => new_rprob = Some(t[1].parse::<f32>().unwrap()),
                     _ => continue,
                 }
             }
@@ -88,7 +88,6 @@ impl Block {
                         '1' => 1,
                         _ => panic!("Invalid file format"),
                     };
-                    //rhap[[cur_var, ind]] = geno;
                     *r = geno == 1;
                     if geno == 1 {
                         alt_count += clustsize[ind];
@@ -96,7 +95,7 @@ impl Block {
                 });
             rhap.push(new_rhap_row);
             afreq.push(
-                f64::from(u32::try_from(alt_count).unwrap()) / f64::from(u32::try_from(m).unwrap()),
+                f32::from(u16::try_from(alt_count).unwrap()) / f32::from(u16::try_from(m).unwrap()),
             );
         }
 
@@ -107,7 +106,7 @@ impl Block {
             clustsize: Array1::from(
                 clustsize
                     .into_iter()
-                    .map(|&v| (v as u32).into())
+                    .map(|&v| (v as u16).into())
                     .collect::<Vec<_>>(),
             ),
             rhap,
