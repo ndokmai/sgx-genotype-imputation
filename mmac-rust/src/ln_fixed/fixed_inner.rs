@@ -1,5 +1,7 @@
 use paste::paste;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::marker::PhantomData;
+use std::mem::transmute;
 use timing_shield::{TpBool, TpCondSwap, TpEq, TpI64, TpOrd, TpU32};
 use typenum::marker_traits::Unsigned;
 
@@ -16,7 +18,7 @@ macro_rules! new_self {
 // our own version of TpI64
 macro_rules! new_self_raw {
     ($inner: expr) => {
-        new_self!(unsafe { std::mem::transmute($inner) })
+        new_self!(unsafe { transmute($inner) })
     };
 }
 
@@ -130,7 +132,7 @@ macro_rules! impl_approx {
 }
 
 /// Fixed in regular (no log) space. For internal use only.
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct FixedInner<F: Unsigned> {
     inner: TpI64,
     _phantom: PhantomData<F>,
@@ -355,6 +357,44 @@ impl<F: Unsigned> TpCondSwap for FixedInner<F> {
     }
 }
 
+impl<F: Unsigned> Serialize for FixedInner<F> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u64(unsafe { transmute(self.inner) })
+    }
+}
+
+pub struct FixedInnerVisitor<F>(pub PhantomData<F>);
+
+impl<'de, F: Unsigned> serde::de::Visitor<'de> for FixedInnerVisitor<F> {
+    type Value = FixedInner<F>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("Error serializing FixedInner")
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(FixedInner::<F> {
+            inner: unsafe { transmute(value) },
+            _phantom: PhantomData,
+        })
+    }
+}
+
+impl<'de, F: Unsigned> Deserialize<'de> for FixedInner<F> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_u64(FixedInnerVisitor::<F>(PhantomData))
+    }
+}
+
 // NLS approximation parameters
 mod nls {
     pub const N_SPLIT: usize = 4;
@@ -504,5 +544,15 @@ mod tests {
         select_from_4_f32_test_single! {true, false};
         select_from_4_f32_test_single! {false, true};
         select_from_4_f32_test_single! {true, true};
+    }
+
+    #[test]
+    fn serialize_test() {
+        let reference = 123.123456789123456789f32;
+        let a = F::leaky_from_f32(reference);
+        let encoded: Vec<u8> = bincode::serialize(&a).unwrap();
+        let decoded: F = bincode::deserialize(&encoded[..]).unwrap();
+        let res = decoded.leaky_into_f32();
+        assert!((reference - res).abs() < 1e-6);
     }
 }

@@ -1,5 +1,7 @@
 #![feature(const_fn)]
+#![feature(seek_convenience)]
 
+mod cache;
 mod impute;
 mod input;
 mod ref_panel;

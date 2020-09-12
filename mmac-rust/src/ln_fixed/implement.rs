@@ -1,6 +1,9 @@
+use super::fixed_inner::FixedInnerVisitor;
 use super::FixedInner;
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::marker::PhantomData;
 use std::ops::{Add, Sub};
 use timing_shield::{TpBool, TpCondSwap, TpEq, TpOrd};
 use typenum::marker_traits::Unsigned;
@@ -206,6 +209,43 @@ impl<'a, F: Unsigned + 'static> std::iter::Sum<&'a LnFixed<F>> for LnFixed<F> {
         I: Iterator<Item = &'a LnFixed<F>>,
     {
         iter.cloned().sum::<Self>()
+    }
+}
+
+impl<F: Unsigned> Serialize for LnFixed<F> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+struct LnFixedVisitor<F>(PhantomData<F>);
+
+impl<'de, F: Unsigned> serde::de::Visitor<'de> for LnFixedVisitor<F> {
+    type Value = LnFixed<F>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("Error serializing FixedInner")
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        FixedInnerVisitor::<F>(PhantomData)
+            .visit_u64(value)
+            .map(|v| LnFixed(v))
+    }
+}
+
+impl<'de, F: Unsigned> Deserialize<'de> for LnFixed<F> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_u64(LnFixedVisitor::<F>(PhantomData))
     }
 }
 

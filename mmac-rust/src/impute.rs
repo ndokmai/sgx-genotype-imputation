@@ -1,10 +1,13 @@
-use crate::ref_panel::RefPanel;
-use crate::Block;
+use crate::cache::*;
+use crate::ref_panel::{Block, RefPanel};
 use crate::{Input, Real};
 use bitvec::prelude::BitSlice;
 use lazy_static::lazy_static;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::convert::TryFrom;
+
+type Cache<T> = LocalCacheSaver<T>;
+//type Cache<T> = FileCacheSaver<T>;
 
 #[cfg(feature = "leak-resistant")]
 mod leak_resistant_mod {
@@ -241,11 +244,11 @@ pub fn impute_chunk(
     let m = ref_panel.n_haps;
     let m_real: Real = u16::try_from(m).unwrap().into();
 
-
-    let mut fwdcache = Vec::new();
-    let mut fwdcache_norecom = Vec::new();
-    let mut fwdcache_first = Vec::new();
-    let mut fwdcache_all = Vec::new();
+    let cache_bound = 500;
+    let mut fwdcache = Cache::new(cache_bound);
+    let mut fwdcache_norecom = Cache::new(cache_bound);
+    let mut fwdcache_first = Cache::new(cache_bound);
+    let mut fwdcache_all = Cache::new(cache_bound);
 
     // Forward pass
     let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
@@ -323,6 +326,11 @@ pub fn impute_chunk(
         var_offset += block.nvar - 1;
     }
 
+    let mut fwdcache = fwdcache.into_retriever();
+    let mut fwdcache_norecom = fwdcache_norecom.into_retriever();
+    let mut fwdcache_first = fwdcache_first.into_retriever();
+    let mut fwdcache_all = fwdcache_all.into_retriever();
+
     let mut imputed = unsafe { Array1::<Real>::uninitialized(thap.len()) };
 
     // Backward pass
@@ -333,6 +341,7 @@ pub fn impute_chunk(
         let fwdprob = fwdcache.pop().unwrap();
         let fwdprob_norecom = fwdcache_norecom.pop().unwrap();
         let fwdprob_first = fwdcache_first.pop().unwrap();
+        let fwdprob_all = fwdcache_all.pop().unwrap();
 
         // Precompute joint fwd-bwd term for imputation;
         // same as "Constants" variable in minimac
@@ -340,7 +349,7 @@ pub fn impute_chunk(
         let jprob = {
             let mut jprob = Array1::<Real>::zeros(block.nuniq);
             Zip::from(&block.indmap)
-                .and(&fwdcache_all[b])
+                .and(&fwdprob_all)
                 .and(&sprob_all)
                 .apply(|&ind, &c, &p| {
                     jprob[ind as usize] += c * p;
@@ -351,12 +360,7 @@ pub fn impute_chunk(
         #[cfg(feature = "leak-resistant")]
         let jprob = {
             let mut jprob = vec![Bacc::init(); block.nuniq];
-            for ((&ind, &c), &p) in block
-                .indmap
-                .iter()
-                .zip(&fwdcache_all[b])
-                .zip(sprob_all.iter())
-            {
+            for ((&ind, &c), &p) in block.indmap.iter().zip(&fwdprob_all).zip(sprob_all.iter()) {
                 jprob[ind as usize] += c * p;
             }
             Array1::from(jprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
