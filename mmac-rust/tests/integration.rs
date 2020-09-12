@@ -32,7 +32,7 @@ fn integration_test() {
     let input_path = Path::new(INPUT_FILE);
     let ref_panel = RefPanel::load(chunk_id, &ref_panel_path);
     let thap = load_chunk_from_input(chunk_id, &input_path);
-    let imputed = impute_chunk(chunk_id, thap.view(), ref_panel);
+    let imputed = impute_chunk(chunk_id, thap.view(), ref_panel.into_reader());
     let ref_imputed = load_ref_output();
     assert!(imputed
         .into_iter()

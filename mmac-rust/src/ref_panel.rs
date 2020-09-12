@@ -1,119 +1,23 @@
-use crate::Real;
-use bitvec::prelude::{bitvec, BitVec, Lsb0};
-use ndarray::Array1;
-use std::convert::TryFrom;
+use crate::block::Block;
+use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Result};
+use std::io::{BufRead, BufReader, Read, Result, Write};
 use std::path::Path;
+use std::sync::mpsc::{sync_channel, Receiver};
+use std::thread::spawn;
 
-pub struct Block {
-    pub indmap: Array1<u16>,
-    pub nvar: usize,
-    pub nuniq: usize,
-    pub clustsize: Array1<Real>,
-    pub rhap: Vec<BitVec>,
-    //pub eprob: Array1<f64>,
-    pub rprob: Array1<f32>,
-    pub afreq: Array1<f32>,
+pub trait RefPanelRead {
+    fn n_haps(&self) -> usize;
+    fn n_markers(&self) -> usize;
+    fn n_blocks(&self) -> usize;
+    fn next_block(&mut self) -> Option<Block>;
 }
 
-impl Block {
-    pub fn read(m: usize, mut lines_iter: impl Iterator<Item = Result<String>>) -> Self {
-        // read block metadata
-        let line = lines_iter.next().unwrap().unwrap();
-        let mut iter = line.split_ascii_whitespace();
-        let tok = iter.nth(7).unwrap(); // info field
-        let tok = tok.split(";").collect::<Vec<_>>();
-
-        let mut nvar = None;
-        let mut nuniq = None;
-
-        for t in tok {
-            let t = t.split("=").collect::<Vec<_>>();
-            match t[0] {
-                "VARIANTS" => nvar = Some(t[1].parse::<usize>().unwrap()),
-                "REPS" => nuniq = Some(t[1].parse::<usize>().unwrap()),
-                _ => continue,
-            }
-        }
-
-        let nvar = nvar.unwrap();
-        let nuniq = nuniq.unwrap();
-
-        iter.next().unwrap(); // skip one column
-        let indmap = iter.map(|s| s.parse::<u16>().unwrap()).collect::<Vec<_>>();
-
-        let mut clustsize = Array1::<u16>::zeros(nuniq);
-        indmap.iter().for_each(|&v| clustsize[v as usize] += 1);
-
-        //let mut eprob = Vec::<f64>::with_capacity(nvar);
-        let mut rprob = Vec::<f32>::with_capacity(nvar);
-        let mut rhap: Vec<BitVec> = Vec::new();
-        let mut afreq = Vec::<f32>::with_capacity(nvar);
-
-        // read block data
-        for _ in 0..nvar {
-            let line = lines_iter.next().unwrap().unwrap();
-            let mut iter = line.split_ascii_whitespace();
-            let tok = iter.nth(7).unwrap(); // info field
-            let tok = tok.split(";").collect::<Vec<_>>();
-
-            //let mut new_eprob = None;
-            let mut new_rprob = None;
-
-            for t in tok {
-                let t = t.split("=").collect::<Vec<_>>();
-                match t[0] {
-                    //"Err" => new_eprob = Some(t[1].parse::<f64>().unwrap()),
-                    "Recom" => new_rprob = Some(t[1].parse::<f32>().unwrap()),
-                    _ => continue,
-                }
-            }
-
-            //eprob.push(new_eprob.unwrap());
-            rprob.push(new_rprob.unwrap());
-
-            let data = iter.next().unwrap(); // data for one variant
-            let mut alt_count = 0;
-
-            let mut new_rhap_row = bitvec![Lsb0, usize; 0; nuniq];
-            data.chars()
-                .zip(new_rhap_row.as_mut_bitslice())
-                .enumerate()
-                .for_each(|(ind, (b, mut r))| {
-                    let geno = match b {
-                        '0' => 0,
-                        '1' => 1,
-                        _ => panic!("Invalid file format"),
-                    };
-                    *r = geno == 1;
-                    if geno == 1 {
-                        alt_count += clustsize[ind];
-                    }
-                });
-            rhap.push(new_rhap_row);
-            afreq.push(
-                f32::from(u16::try_from(alt_count).unwrap()) / f32::from(u16::try_from(m).unwrap()),
-            );
-        }
-
-        Self {
-            indmap: Array1::from(indmap),
-            nvar,
-            nuniq,
-            clustsize: Array1::from(clustsize.into_iter().map(|&v| v.into()).collect::<Vec<_>>()),
-            rhap,
-            //eprob: Array1::from(eprob),
-            rprob: Array1::from(rprob),
-            afreq: Array1::from(afreq),
-        }
-    }
-}
-
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct RefPanel {
-    pub n_haps: usize,
-    pub n_markers: usize,
-    pub blocks: Vec<Block>,
+    n_haps: usize,
+    n_markers: usize,
+    blocks: Vec<Block>,
 }
 
 impl RefPanel {
@@ -170,5 +74,107 @@ impl RefPanel {
         let n_haps = n_haps.unwrap();
         let n_markers = n_markers.unwrap();
         (n_blocks, n_haps, n_markers)
+    }
+
+    pub fn n_haps(&self) -> usize {
+        self.n_haps
+    }
+
+    pub fn n_markers(&self) -> usize {
+        self.n_markers
+    }
+
+    pub fn n_blocks(&self) -> usize {
+        self.blocks.len()
+    }
+
+    pub fn write<W: Write>(&self, mut writer: W) -> bincode::Result<()> {
+        writer.write_u32::<NetworkEndian>(self.n_haps as u32)?;
+        writer.write_u32::<NetworkEndian>(self.n_markers as u32)?;
+        writer.write_u32::<NetworkEndian>(self.blocks.len() as u32)?;
+        for block in &self.blocks {
+            bincode::serialize_into(&mut writer, block)?;
+        }
+        Ok(())
+    }
+
+    pub fn into_reader(self) -> OwnedRefPanelReader {
+        OwnedRefPanelReader {
+            n_haps: self.n_haps,
+            n_markers: self.n_markers,
+            n_blocks: self.blocks.len(),
+            rev_blocks: self.blocks.into_iter().rev().collect(),
+        }
+    }
+}
+
+pub struct OwnedRefPanelReader {
+    n_haps: usize,
+    n_markers: usize,
+    n_blocks: usize,
+    rev_blocks: Vec<Block>,
+}
+
+impl RefPanelRead for OwnedRefPanelReader {
+    fn n_haps(&self) -> usize {
+        self.n_haps
+    }
+
+    fn n_markers(&self) -> usize {
+        self.n_markers
+    }
+
+    fn n_blocks(&self) -> usize {
+        self.n_blocks
+    }
+
+    fn next_block(&mut self) -> Option<Block> {
+        self.rev_blocks.pop()
+    }
+}
+
+pub struct RefPanelReader {
+    n_haps: usize,
+    n_markers: usize,
+    n_blocks: usize,
+    receiver: Receiver<Block>,
+}
+
+impl RefPanelReader {
+    pub fn new(bound: usize, mut reader: impl Read + Send + 'static) -> Result<Self> {
+        let n_haps = reader.read_u32::<NetworkEndian>()? as usize;
+        let n_markers = reader.read_u32::<NetworkEndian>()? as usize;
+        let n_blocks = reader.read_u32::<NetworkEndian>()? as usize;
+        let (s, r) = sync_channel::<Block>(bound);
+        spawn(move || loop {
+            match bincode::deserialize_from(&mut reader) {
+                Ok(block) => s.send(block).unwrap(),
+                Err(_) => break,
+            }
+        });
+        Ok(Self {
+            n_haps,
+            n_markers,
+            n_blocks,
+            receiver: r,
+        })
+    }
+}
+
+impl RefPanelRead for RefPanelReader {
+    fn n_haps(&self) -> usize {
+        self.n_haps
+    }
+
+    fn n_markers(&self) -> usize {
+        self.n_markers
+    }
+
+    fn n_blocks(&self) -> usize {
+        self.n_blocks
+    }
+
+    fn next_block(&mut self) -> Option<Block> {
+        self.receiver.recv().ok()
     }
 }

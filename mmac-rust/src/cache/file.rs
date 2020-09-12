@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs::{remove_file, File};
-use std::io::{BufWriter, BufReader, Seek, SeekFrom, Write};
+use std::io::{BufReader, BufWriter, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::thread::{spawn, JoinHandle};
 
 static FILE_ROOT: &str = "/tmp";
+const WRITER_BUF_SIZE: usize = 1 << 24;
 
 // TODO Delete files upon error
 fn offload_proc<T>(r: Receiver<T>, s: SyncSender<T>)
@@ -17,7 +18,8 @@ where
     let cache_path = Path::new(FILE_ROOT).join(cache_filename);
     let mut bytes_positions = Vec::new();
     {
-        let mut cache_file = BufWriter::with_capacity(1 << 24, File::create(&cache_path).unwrap());
+        let mut cache_file =
+            BufWriter::with_capacity(WRITER_BUF_SIZE, File::create(&cache_path).unwrap());
         loop {
             match r.recv() {
                 Ok(v) => {

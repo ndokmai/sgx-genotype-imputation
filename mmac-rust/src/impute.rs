@@ -1,5 +1,6 @@
+use crate::block::Block;
 use crate::cache::*;
-use crate::ref_panel::{Block, RefPanel};
+use crate::ref_panel::RefPanelRead;
 use crate::{Input, Real};
 use bitvec::prelude::BitSlice;
 use lazy_static::lazy_static;
@@ -229,22 +230,21 @@ fn impute(
         );
         (p0.result(), p1.result())
     };
-
     p1 / (p1 + p0)
 }
 
 pub fn impute_chunk(
     _chunk_id: usize,
     thap: ArrayView1<Input>,
-    mut ref_panel: RefPanel,
+    mut ref_panel: impl RefPanelRead,
 ) -> Array1<Real> {
-    assert!(thap.len() == ref_panel.n_markers);
+    assert!(thap.len() == ref_panel.n_markers());
 
-    let blocks = &mut ref_panel.blocks;
-    let m = ref_panel.n_haps;
+    let m = ref_panel.n_haps();
     let m_real: Real = u16::try_from(m).unwrap().into();
 
     let cache_bound = 50;
+    let mut blockcache = Cache::new(cache_bound);
     let mut fwdcache = Cache::new(cache_bound);
     let mut fwdcache_norecom = Cache::new(cache_bound);
     let mut fwdcache_first = Cache::new(cache_bound);
@@ -254,11 +254,17 @@ pub fn impute_chunk(
     let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
     let mut var_offset: usize = 0;
 
-    // First position emission (edge case)
-    first_emission(thap[0], &blocks[0], sprob_all.view_mut());
+    let n_blocks = ref_panel.n_blocks();
 
-    for b in 0..blocks.len() {
-        let block = &blocks[b];
+    for b in 0..n_blocks {
+        let block = if b == 0 {
+            // First position emission (edge case)
+            let first_block = ref_panel.next_block().unwrap();
+            first_emission(thap[0], &first_block, sprob_all.view_mut());
+            first_block
+        } else {
+            ref_panel.next_block().unwrap()
+        };
 
         fwdcache_all.push(sprob_all.clone());
 
@@ -309,9 +315,9 @@ pub fn impute_chunk(
         let sprob_recom = &sprob - &sprob_norecom;
 
         // Skip last block
-        if b < blocks.len() - 1 {
+        if b < n_blocks - 1 {
             unfold_probabilities(
-                block,
+                &block,
                 sprob_all.view_mut(),
                 sprob_first.view(),
                 sprob_recom.view(),
@@ -319,13 +325,15 @@ pub fn impute_chunk(
             );
         }
 
+        var_offset += block.nvar - 1;
+
+        blockcache.push(block);
         fwdcache.push(fwdprob);
         fwdcache_norecom.push(fwdprob_norecom);
         fwdcache_first.push(sprob_first);
-
-        var_offset += block.nvar - 1;
     }
 
+    let mut blockcache = blockcache.into_retriever();
     let mut fwdcache = fwdcache.into_retriever();
     let mut fwdcache_norecom = fwdcache_norecom.into_retriever();
     let mut fwdcache_first = fwdcache_first.into_retriever();
@@ -336,8 +344,8 @@ pub fn impute_chunk(
     // Backward pass
     let mut sprob_all = Array1::<Real>::ones(m);
     let mut var_offset: usize = 0;
-    for b in (0..blocks.len()).rev() {
-        let block = blocks.pop().unwrap();
+    for b in (0..n_blocks).rev() {
+        let block = blockcache.pop().unwrap();
         let fwdprob = fwdcache.pop().unwrap();
         let fwdprob_norecom = fwdcache_norecom.pop().unwrap();
         let fwdprob_first = fwdcache_first.pop().unwrap();

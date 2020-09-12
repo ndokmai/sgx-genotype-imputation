@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-mod local;
 mod file;
+mod local;
 
-pub use local::*;
 pub use file::*;
+pub use local::*;
