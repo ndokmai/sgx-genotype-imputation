@@ -11,8 +11,6 @@ mod symbol;
 mod bacc;
 #[cfg(feature = "leak-resistant")]
 mod ln_fixed;
-#[cfg(all(feature = "leak-resistant", debug_assertions))]
-mod ln_wrapped;
 
 pub use crate::impute::*;
 pub use crate::input::*;
@@ -28,7 +26,6 @@ mod inner {
 mod inner {
     use super::*;
     pub type Real = ln_fixed::LnFixed<typenum::U20>;
-    //pub type Real = ln_wrapped::LnWrapped;
     pub type Input = timing_shield::TpI8;
 }
 

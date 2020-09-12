@@ -10,7 +10,6 @@ use std::path::Path;
 /// TODO: chunk_id is currently ignored
 /// and the entire toy data is loaded
 pub fn load_chunk_from_input(_chunk_id: usize, input_path: &Path) -> Array1<Input> {
-    //let n = 97020; // TODO: hardcoded variant count
     let f = File::open(input_path).expect("Unable to open input file");
     let f = BufReader::new(f);
     let x = f.lines().map(|line| {

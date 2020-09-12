@@ -6,8 +6,8 @@ use lazy_static::lazy_static;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::convert::TryFrom;
 
-type Cache<T> = LocalCacheSaver<T>;
-//type Cache<T> = FileCacheSaver<T>;
+//type Cache<T> = LocalCacheSaver<T>;
+type Cache<T> = FileCacheSaver<T>;
 
 #[cfg(feature = "leak-resistant")]
 mod leak_resistant_mod {
@@ -244,7 +244,7 @@ pub fn impute_chunk(
     let m = ref_panel.n_haps;
     let m_real: Real = u16::try_from(m).unwrap().into();
 
-    let cache_bound = 500;
+    let cache_bound = 50;
     let mut fwdcache = Cache::new(cache_bound);
     let mut fwdcache_norecom = Cache::new(cache_bound);
     let mut fwdcache_first = Cache::new(cache_bound);
