@@ -9,7 +9,22 @@ use std::path::Path;
 /// imputed independently
 /// TODO: chunk_id is currently ignored
 /// and the entire toy data is loaded
-pub fn load_chunk_from_input(_chunk_id: usize, input_path: &Path) -> Array1<Input> {
+pub fn load_chunk_from_input_ind(_chunk_id: usize, input_path: &Path) -> Array1<i8> {
+    let x = load_vector(input_path);
+    Array1::from(x)
+}
+
+pub fn load_chunk_from_input_dat(_chunk_id: usize, input_path: &Path) -> Array1<Input> {
+    let x = load_vector(input_path);
+
+    #[cfg(feature = "leak-resistant")]
+    let x = x.iter().map(|v| Input::protect(*v));
+    let x = x.collect::<Vec<_>>();
+
+    Array1::from(x)
+}
+
+fn load_vector(input_path: &Path) -> Vec<i8> {
     let f = File::open(input_path).expect("Unable to open input file");
     let f = BufReader::new(f);
     let x = f.lines().map(|line| {
@@ -17,10 +32,5 @@ pub fn load_chunk_from_input(_chunk_id: usize, input_path: &Path) -> Array1<Inpu
             .parse::<i8>()
             .expect("Parsing error in input file")
     });
-
-    #[cfg(feature = "leak-resistant")]
-    let x = x.map(|v| Input::protect(v));
-
-    let x = x.collect::<Vec<_>>();
-    Array1::from(x)
+    x.collect::<Vec<_>>()
 }

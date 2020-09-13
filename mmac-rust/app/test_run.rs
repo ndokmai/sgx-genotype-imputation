@@ -1,5 +1,5 @@
-use mmac::{impute_chunk, load_chunk_from_input, RefPanelReader};
-use mmac::cache::{OffloadCache, FileCacheBackend};
+use mmac::cache::{FileCacheBackend, OffloadCache};
+use mmac::{impute_chunk, load_chunk_from_input_dat, load_chunk_from_input_ind, RefPanelReader};
 use std::fs::File;
 use std::io::BufReader;
 use std::io::Write;
@@ -9,7 +9,8 @@ use std::process::Command;
 use std::time::Instant;
 use std::writeln;
 
-const INPUT_FILE: &'static str = "input.txt";
+const INPUT_IND_FILE: &'static str = "input_ind.txt";
+const INPUT_DAT_FILE: &'static str = "input_dat.txt";
 const OUTPUT_FILE: &'static str = "output.txt";
 
 fn main() {
@@ -33,11 +34,16 @@ fn main() {
         .unwrap();
 
     let chunk_id = 0;
-    let input_path = Path::new(INPUT_FILE);
+    let input_ind_path = Path::new(INPUT_IND_FILE);
+    let input_dat_path = Path::new(INPUT_DAT_FILE);
 
-    eprintln!("Loading chunk {} from input ({})", chunk_id, INPUT_FILE);
+    eprintln!(
+        "Loading chunk {} from input ({} and {})",
+        chunk_id, INPUT_IND_FILE, INPUT_DAT_FILE
+    );
     let now = std::time::Instant::now();
-    let thap = load_chunk_from_input(chunk_id, &input_path);
+    let thap_ind = load_chunk_from_input_ind(chunk_id, &input_ind_path);
+    let thap_dat = load_chunk_from_input_dat(chunk_id, &input_dat_path);
     eprintln!("Input load time: {} ms", (Instant::now() - now).as_millis());
 
     let stream = {
@@ -60,7 +66,13 @@ fn main() {
 
     let now = std::time::Instant::now();
     let cache = OffloadCache::new(bound, FileCacheBackend);
-    let imputed = impute_chunk(chunk_id, thap.view(), ref_panel_reader, cache);
+    let imputed = impute_chunk(
+        chunk_id,
+        thap_ind.view(),
+        thap_dat.view(),
+        ref_panel_reader,
+        cache,
+    );
     eprintln!("Imputation time: {} ms", (Instant::now() - now).as_millis());
 
     let mut file = File::create(OUTPUT_FILE).unwrap();

@@ -15,10 +15,10 @@ mod bacc;
 #[cfg(feature = "leak-resistant")]
 mod ln_fixed;
 
+pub use crate::cache::*;
 pub use crate::impute::*;
 pub use crate::input::*;
 pub use crate::ref_panel::*;
-pub use crate::cache::*;
 
 #[cfg(not(feature = "leak-resistant"))]
 mod inner {
