@@ -1,4 +1,5 @@
 use mmac::{impute_chunk, load_chunk_from_input, RefPanelReader};
+use mmac::cache::{OffloadCache, FileCacheBackend};
 use std::fs::File;
 use std::io::BufReader;
 use std::io::Write;
@@ -57,7 +58,8 @@ fn main() {
     let ref_panel_reader = RefPanelReader::new(bound, BufReader::new(stream)).unwrap();
 
     let now = std::time::Instant::now();
-    let imputed = impute_chunk(chunk_id, thap.view(), ref_panel_reader);
+    let cache = OffloadCache::new(bound, FileCacheBackend);
+    let imputed = impute_chunk(chunk_id, thap.view(), ref_panel_reader, cache);
     eprintln!("Imputation time: {} ms", (Instant::now() - now).as_millis());
 
     let mut file = File::create(OUTPUT_FILE).unwrap();

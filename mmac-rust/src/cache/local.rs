@@ -1,25 +1,39 @@
-pub struct LocalCacheSaver<T>(Vec<T>);
+use super::*;
 
-impl<T> LocalCacheSaver<T> {
-    pub fn new(_: usize) -> Self {
-        Self(Vec::new())
-    }
+pub struct LocalCache;
 
-    #[inline]
-    pub fn push(&mut self, v: T) {
-        self.0.push(v)
-    }
-
-    pub fn into_retriever(self) -> LocalCacheRetriever<T> {
-        LocalCacheRetriever(self.0)
+impl Cache for LocalCache {
+    type Save<T> = LocalCacheSave<T>;
+    fn new_save<T>(&self) -> Self::Save<T> {
+        LocalCacheSave::new()
     }
 }
 
-pub struct LocalCacheRetriever<T>(Vec<T>);
+pub struct LocalCacheSave<T>(Vec<T>);
 
-impl<T> LocalCacheRetriever<T> {
+impl<T> LocalCacheSave<T> {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<T> CacheSave<T> for LocalCacheSave<T> {
+    type Load = LocalCacheLoad<T>;
     #[inline]
-    pub fn pop(&mut self) -> Option<T> {
+    fn push(&mut self, v: T) {
+        self.0.push(v)
+    }
+
+    fn into_load(self) -> Self::Load {
+        LocalCacheLoad(self.0)
+    }
+}
+
+pub struct LocalCacheLoad<T>(Vec<T>);
+
+impl<T> CacheLoad<T> for LocalCacheLoad<T> {
+    #[inline]
+    fn pop(&mut self) -> Option<T> {
         self.0.pop()
     }
 }

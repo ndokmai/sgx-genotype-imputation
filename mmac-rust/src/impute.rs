@@ -7,9 +7,6 @@ use lazy_static::lazy_static;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::convert::TryFrom;
 
-//type Cache<T> = LocalCacheSaver<T>;
-type Cache<T> = FileCacheSaver<T>;
-
 #[cfg(feature = "leak-resistant")]
 mod leak_resistant_mod {
     pub use crate::bacc::Bacc;
@@ -237,18 +234,18 @@ pub fn impute_chunk(
     _chunk_id: usize,
     thap: ArrayView1<Input>,
     mut ref_panel: impl RefPanelRead,
+    cache: impl Cache,
 ) -> Array1<Real> {
     assert!(thap.len() == ref_panel.n_markers());
 
     let m = ref_panel.n_haps();
     let m_real: Real = u16::try_from(m).unwrap().into();
 
-    let cache_bound = 50;
-    let mut blockcache = Cache::new(cache_bound);
-    let mut fwdcache = Cache::new(cache_bound);
-    let mut fwdcache_norecom = Cache::new(cache_bound);
-    let mut fwdcache_first = Cache::new(cache_bound);
-    let mut fwdcache_all = Cache::new(cache_bound);
+    let mut blockcache = cache.new_save();
+    let mut fwdcache = cache.new_save();
+    let mut fwdcache_norecom = cache.new_save();
+    let mut fwdcache_first = cache.new_save();
+    let mut fwdcache_all = cache.new_save();
 
     // Forward pass
     let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
@@ -333,11 +330,11 @@ pub fn impute_chunk(
         fwdcache_first.push(sprob_first);
     }
 
-    let mut blockcache = blockcache.into_retriever();
-    let mut fwdcache = fwdcache.into_retriever();
-    let mut fwdcache_norecom = fwdcache_norecom.into_retriever();
-    let mut fwdcache_first = fwdcache_first.into_retriever();
-    let mut fwdcache_all = fwdcache_all.into_retriever();
+    let mut blockcache = blockcache.into_load();
+    let mut fwdcache = fwdcache.into_load();
+    let mut fwdcache_norecom = fwdcache_norecom.into_load();
+    let mut fwdcache_first = fwdcache_first.into_load();
+    let mut fwdcache_all = fwdcache_all.into_load();
 
     let mut imputed = unsafe { Array1::<Real>::uninitialized(thap.len()) };
 

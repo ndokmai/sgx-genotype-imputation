@@ -1,11 +1,13 @@
 #![feature(const_fn)]
 #![feature(seek_convenience)]
+#![feature(generic_associated_types)]
+#![allow(incomplete_features)]
 
 mod block;
-mod cache;
-mod impute;
-mod input;
-mod ref_panel;
+pub mod cache;
+pub mod impute;
+pub mod input;
+pub mod ref_panel;
 mod symbol;
 
 #[cfg(feature = "leak-resistant")]
@@ -16,6 +18,7 @@ mod ln_fixed;
 pub use crate::impute::*;
 pub use crate::input::*;
 pub use crate::ref_panel::*;
+pub use crate::cache::*;
 
 #[cfg(not(feature = "leak-resistant"))]
 mod inner {
