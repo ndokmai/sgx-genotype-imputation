@@ -13,7 +13,7 @@ pub trait RefPanelRead {
     fn next_block(&mut self) -> Option<Block>;
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct RefPanel {
     n_haps: usize,
     n_markers: usize,

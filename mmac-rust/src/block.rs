@@ -4,7 +4,7 @@ use ndarray::Array1;
 use std::convert::TryFrom;
 use std::io::Result;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Block {
     pub indmap: Array1<u16>,
     pub nvar: usize,

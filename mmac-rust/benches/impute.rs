@@ -13,10 +13,13 @@ pub fn impute_bench(c: &mut Criterion) {
     let thap = load_chunk_from_input(chunk_id, &input_path);
     c.bench_function("impute test data", |b| {
         b.iter(|| {
+            let cache = LocalCache;
+            let ref_panel = ref_panel.clone().into_reader();
             impute_chunk(
                 black_box(chunk_id),
                 black_box(thap.view()),
-                black_box(&ref_panel),
+                black_box(ref_panel),
+                black_box(cache),
             )
         })
     });
