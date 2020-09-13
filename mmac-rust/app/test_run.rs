@@ -25,6 +25,7 @@ fn main() {
     args.push("--release");
 
     let mut feed = Command::new("cargo")
+        .arg("+nightly")
         .arg("run")
         .args(&["--bin", "ref_panel_feed"])
         .args(&args[..])
