@@ -4,7 +4,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf";
-const INPUT_FILE: &'static str = "test_data/small_input.txt";
+const INPUT_IND_FILE: &'static str = "test_data/small_input_ind.txt";
+const INPUT_DAT_FILE: &'static str = "test_data/small_input_dat.txt";
 
 #[cfg(not(feature = "leak-resistant"))]
 const REF_OUTPUT_FILE: &'static str = "test_data/small_output_ref.txt";
@@ -29,12 +30,20 @@ fn load_ref_output() -> Vec<f32> {
 fn integration_test() {
     let chunk_id = 0;
     let ref_panel_path = Path::new(REF_PANEL_FILE);
-    let input_path = Path::new(INPUT_FILE);
+    let input_ind_path = Path::new(INPUT_IND_FILE);
+    let input_dat_path = Path::new(INPUT_DAT_FILE);
     let ref_panel = RefPanel::load(chunk_id, &ref_panel_path);
-    let thap = load_chunk_from_input(chunk_id, &input_path);
+    let thap_ind = load_chunk_from_input_ind(chunk_id, &input_ind_path);
+    let thap_dat = load_chunk_from_input_dat(chunk_id, &input_dat_path);
     let bound = 50;
     let cache = OffloadCache::new(bound, FileCacheBackend);
-    let imputed = impute_chunk(chunk_id, thap.view(), ref_panel.into_reader(), cache);
+    let imputed = impute_chunk(
+        chunk_id,
+        thap_ind.view(),
+        thap_dat.view(),
+        ref_panel.into_reader(),
+        cache,
+    );
     let ref_imputed = load_ref_output();
     assert!(imputed
         .into_iter()
