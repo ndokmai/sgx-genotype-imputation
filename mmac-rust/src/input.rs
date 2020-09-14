@@ -18,8 +18,7 @@ pub fn load_chunk_from_input_dat(_chunk_id: usize, input_path: &Path) -> Array1<
     let x = load_vector(input_path);
 
     #[cfg(feature = "leak-resistant")]
-    let x = x.iter().map(|v| Input::protect(*v));
-    let x = x.collect::<Vec<_>>();
+    let x = x.iter().map(|v| Input::protect(*v)).collect::<Vec<_>>();
 
     Array1::from(x)
 }
