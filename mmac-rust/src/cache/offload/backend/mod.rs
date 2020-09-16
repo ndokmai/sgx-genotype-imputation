@@ -1,3 +1,4 @@
+mod encryption;
 mod file;
 pub use file::*;
 
