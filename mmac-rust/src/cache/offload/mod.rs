@@ -26,7 +26,9 @@ where
     B::WriteBackend: Send + 'static,
 {
     type Save<T: Send + 'static> = OffloadCacheSave<T, B>;
-    fn new_save<T: Send + 'static + Serialize + for<'de> Deserialize<'de>>(&self) -> Self::Save<T> {
+    fn new_save<T: Send + 'static + Serialize + for<'de> Deserialize<'de>>(
+        &mut self,
+    ) -> Self::Save<T> {
         Self::Save::new(self.bound, self.backend.new_write())
     }
 }
@@ -155,7 +157,7 @@ mod tests {
         for i in 0..5 {
             reference.push(((i * 10)..((i + 1) * 10)).collect::<Vec<u64>>());
         }
-        let cache = OffloadCache::new(2, FileCacheBackend);
+        let mut cache = OffloadCache::new(2, FileCacheBackend);
         let mut save = cache.new_save();
         for v in &reference {
             save.push(v.to_owned());

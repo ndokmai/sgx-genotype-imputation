@@ -10,7 +10,7 @@ pub struct FileCacheBackend;
 
 impl CacheBackend for FileCacheBackend {
     type WriteBackend = FileCacheWriteBackend;
-    fn new_write(&self) -> Self::WriteBackend {
+    fn new_write(&mut self) -> Self::WriteBackend {
         FileCacheWriteBackend::new()
     }
 }
@@ -115,7 +115,7 @@ mod tests {
         for i in 0..5 {
             reference.push(((i * 10)..((i + 1) * 10)).collect::<Vec<u64>>());
         }
-        let cache = FileCacheBackend;
+        let mut cache = FileCacheBackend;
         let mut file = cache.new_write();
         for v in &reference {
             file.push_cache_item(v).unwrap();

@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 
 pub trait Cache {
     type Save<T: Send + 'static>: CacheSave<T>;
-    fn new_save<T: Send + 'static + Serialize + for<'de> Deserialize<'de>>(&self) -> Self::Save<T>;
+    fn new_save<T: Send + 'static + Serialize + for<'de> Deserialize<'de>>(
+        &mut self,
+    ) -> Self::Save<T>;
 }
 
 pub trait CacheSave<T> {

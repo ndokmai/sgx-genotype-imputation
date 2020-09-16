@@ -4,7 +4,7 @@ pub struct LocalCache;
 
 impl Cache for LocalCache {
     type Save<T> = LocalCacheSave<T>;
-    fn new_save<T>(&self) -> Self::Save<T> {
+    fn new_save<T>(&mut self) -> Self::Save<T> {
         LocalCacheSave::new()
     }
 }

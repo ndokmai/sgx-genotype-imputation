@@ -1,12 +1,15 @@
 mod encryption;
 mod file;
+mod tcp;
+pub use encryption::*;
 pub use file::*;
+pub use tcp::*;
 
 use serde::{Deserialize, Serialize};
 use std::io::Result;
 pub trait CacheBackend {
     type WriteBackend: CacheWriteBackend;
-    fn new_write(&self) -> Self::WriteBackend;
+    fn new_write(&mut self) -> Self::WriteBackend;
 }
 
 pub trait CacheWriteBackend {

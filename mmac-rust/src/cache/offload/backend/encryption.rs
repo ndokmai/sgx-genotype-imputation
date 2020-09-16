@@ -31,7 +31,7 @@ impl<B: CacheBackend> EncryptedCacheBackend<B> {
 
 impl<B: CacheBackend> CacheBackend for EncryptedCacheBackend<B> {
     type WriteBackend = EncryptedCacheWriteBackend<B::WriteBackend>;
-    fn new_write(&self) -> Self::WriteBackend {
+    fn new_write(&mut self) -> Self::WriteBackend {
         EncryptedCacheWriteBackend {
             counter: 0,
             cipher: self.cipher.clone(),
@@ -80,8 +80,8 @@ pub struct EncryptedCacheReadBackend<B> {
 
 impl<B: CacheReadBackend> CacheReadBackend for EncryptedCacheReadBackend<B> {
     fn pop_cache_item<T: for<'de> Deserialize<'de>>(&mut self) -> Result<T> {
-        self.countdown -= 1;
         let (nonce, mut ciphertext): (Nonce, Vec<u8>) = self.backend.pop_cache_item()?;
+        self.countdown -= 1;
         let mut counter_buf: Vec<u8> = Vec::new();
         counter_buf.write_u32::<NetworkEndian>(self.countdown as u32)?;
         self.cipher
@@ -102,7 +102,7 @@ mod tests {
         for i in 0..5 {
             reference.push(((i * 10)..((i + 1) * 10)).collect::<Vec<u64>>());
         }
-        let cache = EncryptedCacheBackend::new(FileCacheBackend);
+        let mut cache = EncryptedCacheBackend::new(FileCacheBackend);
         let mut file = cache.new_write();
         for v in &reference {
             file.push_cache_item(v).unwrap();

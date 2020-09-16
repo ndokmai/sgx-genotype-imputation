@@ -18,6 +18,7 @@ bitvec = { version = "0.19", features = ["serde"] }
 rand = "0.7"
 bincode = "1.3"
 byteorder = "1.3"
+bufstream = "0.1"
 generic-array = { version = "0.14", features = ["serde"] }
 aes-gcm = { version = "0.6", features = ["aes"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -40,3 +41,7 @@ path = "app/test_run.rs"
 [[bin]]
 name = "ref_panel_feed"
 path = "app/ref_panel_feed.rs"
+
+[[bin]]
+name = "cache_server"
+path = "app/cache_server.rs"

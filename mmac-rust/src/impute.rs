@@ -246,7 +246,7 @@ pub fn impute_chunk(
     thap_ind: ArrayView1<i8>,
     thap_dat: ArrayView1<Input>,
     mut ref_panel: impl RefPanelRead,
-    cache: impl Cache,
+    mut cache: impl Cache,
 ) -> Array1<Real> {
     assert!(thap_ind.len() == ref_panel.n_markers());
     assert!(thap_dat.len() == thap_ind.iter().filter(|&&v| v == 1).count());

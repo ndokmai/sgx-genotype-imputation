@@ -9,6 +9,7 @@ pub mod impute;
 pub mod input;
 pub mod ref_panel;
 mod symbol;
+pub mod tcp;
 
 #[cfg(feature = "leak-resistant")]
 mod bacc;
@@ -19,6 +20,7 @@ pub use crate::cache::*;
 pub use crate::impute::*;
 pub use crate::input::*;
 pub use crate::ref_panel::*;
+pub use crate::tcp::*;
 
 #[cfg(not(feature = "leak-resistant"))]
 mod inner {

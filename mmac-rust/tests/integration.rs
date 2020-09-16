@@ -1,6 +1,7 @@
 use mmac::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::net::SocketAddr;
 use std::path::Path;
 
 const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf";
@@ -28,6 +29,12 @@ fn load_ref_output() -> Vec<f32> {
 
 #[test]
 fn integration_test() {
+    let port: u16 = 9999;
+    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+    std::thread::spawn(move || {
+        TcpCacheBackend::remote_proc(port, OffloadCache::new(50, FileCacheBackend));
+    });
+
     let chunk_id = 0;
     let ref_panel_path = Path::new(REF_PANEL_FILE);
     let input_ind_path = Path::new(INPUT_IND_FILE);
@@ -35,8 +42,7 @@ fn integration_test() {
     let ref_panel = RefPanel::load(chunk_id, &ref_panel_path);
     let thap_ind = load_chunk_from_input_ind(chunk_id, &input_ind_path);
     let thap_dat = load_chunk_from_input_dat(chunk_id, &input_dat_path);
-    let bound = 50;
-    let cache = OffloadCache::new(bound, FileCacheBackend);
+    let cache = OffloadCache::new(50, EncryptedCacheBackend::new(TcpCacheBackend::new(addr)));
     let imputed = impute_chunk(
         chunk_id,
         thap_ind.view(),

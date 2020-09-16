@@ -1,11 +1,15 @@
-use mmac::cache::{FileCacheBackend, OffloadCache};
-use mmac::{impute_chunk, load_chunk_from_input_dat, load_chunk_from_input_ind, RefPanelReader};
+use mmac::cache::{EncryptedCacheBackend, OffloadCache, TcpCacheBackend};
+use mmac::{
+    impute_chunk, load_chunk_from_input_dat, load_chunk_from_input_ind, tcp_keep_connecting,
+    RefPanelReader,
+};
 use std::fs::File;
 use std::io::BufReader;
 use std::io::Write;
-use std::net::TcpStream;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::process::Command;
+use std::str::FromStr;
 use std::time::Instant;
 use std::writeln;
 
@@ -32,40 +36,50 @@ fn main() {
         .args(&args[..])
         .spawn()
         .unwrap();
+    eprintln!("Main: spawn ref_ref_panel_feed");
+
+    let mut cache_server = Command::new("cargo")
+        .arg("+nightly")
+        .arg("run")
+        .args(&["--bin", "cache_server"])
+        .args(&args[..])
+        .spawn()
+        .unwrap();
+
+    eprintln!("Main: spawn cache_server");
 
     let chunk_id = 0;
     let input_ind_path = Path::new(INPUT_IND_FILE);
     let input_dat_path = Path::new(INPUT_DAT_FILE);
 
     eprintln!(
-        "Loading chunk {} from input ({} and {})",
+        "Main: loading chunk {} from input ({} and {})",
         chunk_id, INPUT_IND_FILE, INPUT_DAT_FILE
     );
     let now = std::time::Instant::now();
     let thap_ind = load_chunk_from_input_ind(chunk_id, &input_ind_path);
     let thap_dat = load_chunk_from_input_dat(chunk_id, &input_dat_path);
-    eprintln!("Input load time: {} ms", (Instant::now() - now).as_millis());
 
-    let stream = {
-        let stream;
-        loop {
-            match TcpStream::connect("localhost:7777") {
-                Ok(s) => {
-                    stream = Some(s);
-                    break;
-                }
-                Err(_) => {}
-            };
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        stream.unwrap()
-    };
+    eprintln!("Main: input load time: {} ms", (Instant::now() - now).as_millis());
 
-    let bound = 50;
-    let ref_panel_reader = RefPanelReader::new(bound, BufReader::new(stream)).unwrap();
+    let stream = tcp_keep_connecting(SocketAddr::from_str("127.0.0.1:7777").unwrap());
+
+    eprintln!("Main: connected to ref_panel_feed");
+
+    let ref_panel_reader = RefPanelReader::new(100, BufReader::new(stream)).unwrap();
 
     let now = std::time::Instant::now();
-    let cache = OffloadCache::new(bound, FileCacheBackend);
+    let cache = OffloadCache::new(
+        50,
+        EncryptedCacheBackend::new(TcpCacheBackend::new(
+            SocketAddr::from_str("127.0.0.1:8888").unwrap(),
+        )),
+    );
+
+    eprintln!("Main: connected to cache_server");
+
+    eprintln!("Main: begin imputation");
+    
     let imputed = impute_chunk(
         chunk_id,
         thap_ind.view(),
@@ -73,7 +87,8 @@ fn main() {
         ref_panel_reader,
         cache,
     );
-    eprintln!("Imputation time: {} ms", (Instant::now() - now).as_millis());
+
+    eprintln!("Main: imputation time: {} ms", (Instant::now() - now).as_millis());
 
     let mut file = File::create(OUTPUT_FILE).unwrap();
     writeln!(
@@ -87,8 +102,10 @@ fn main() {
     )
     .unwrap();
 
-    eprintln!("Imputation result written to {}", OUTPUT_FILE);
+    eprintln!("Main: imputation result written to {}", OUTPUT_FILE);
 
     let ecode = feed.wait().unwrap();
     assert!(ecode.success());
+
+    cache_server.kill().unwrap();
 }
