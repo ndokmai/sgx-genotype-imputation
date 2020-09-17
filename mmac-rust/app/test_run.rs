@@ -1,8 +1,5 @@
 use mmac::cache::{EncryptedCacheBackend, OffloadCache, TcpCacheBackend};
-use mmac::{
-    impute_chunk, load_chunk_from_input_dat, load_chunk_from_input_ind, tcp_keep_connecting,
-    RefPanelReader,
-};
+use mmac::{impute_chunk, tcp_keep_connecting, InputReader, OwnedInput, RefPanelReader};
 use std::fs::File;
 use std::io::BufReader;
 use std::io::Write;
@@ -57,8 +54,7 @@ fn main() {
         chunk_id, INPUT_IND_FILE, INPUT_DAT_FILE
     );
     let now = std::time::Instant::now();
-    let thap_ind = load_chunk_from_input_ind(chunk_id, &input_ind_path);
-    let thap_dat = load_chunk_from_input_dat(chunk_id, &input_dat_path);
+    let (thap_ind, thap_dat) = OwnedInput::load(&input_ind_path, &input_dat_path).into_pair_iter();
 
     eprintln!(
         "Main: input load time: {} ms",
@@ -83,13 +79,7 @@ fn main() {
 
     eprintln!("Main: begin imputation");
 
-    let imputed = impute_chunk(
-        chunk_id,
-        thap_ind.view(),
-        thap_dat.view(),
-        ref_panel_reader,
-        cache,
-    );
+    let imputed = impute_chunk(chunk_id, thap_ind, thap_dat, ref_panel_reader, cache);
 
     eprintln!(
         "Main: imputation time: {} ms",

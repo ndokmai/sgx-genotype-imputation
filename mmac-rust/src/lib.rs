@@ -3,12 +3,12 @@
 #![feature(generic_associated_types)]
 #![allow(incomplete_features)]
 
-mod block;
+pub mod block;
 pub mod cache;
 pub mod impute;
 pub mod input;
 pub mod ref_panel;
-mod symbol;
+pub mod symbol;
 pub mod tcp;
 
 #[cfg(feature = "leak-resistant")]
@@ -20,12 +20,14 @@ pub use crate::cache::*;
 pub use crate::impute::*;
 pub use crate::input::*;
 pub use crate::ref_panel::*;
+pub use crate::symbol::*;
 pub use crate::tcp::*;
 
 #[cfg(not(feature = "leak-resistant"))]
 mod inner {
+    use super::*;
     pub type Real = f32;
-    pub type Input = i8;
+    pub type Input = Symbol;
 }
 
 #[cfg(feature = "leak-resistant")]

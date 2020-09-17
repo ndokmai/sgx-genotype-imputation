@@ -40,21 +40,14 @@ fn integration_test() {
     let input_ind_path = Path::new(INPUT_IND_FILE);
     let input_dat_path = Path::new(INPUT_DAT_FILE);
     let ref_panel = OwnedRefPanelWriter::load(chunk_id, &ref_panel_path);
-    let thap_ind = load_chunk_from_input_ind(chunk_id, &input_ind_path);
-    let thap_dat = load_chunk_from_input_dat(chunk_id, &input_dat_path);
+    let (thap_ind, thap_dat) = OwnedInput::load(&input_ind_path, &input_dat_path).into_pair_iter();
     let cache = OffloadCache::new(50, EncryptedCacheBackend::new(TcpCacheBackend::new(addr)));
-    let imputed = impute_chunk(
-        chunk_id,
-        thap_ind.view(),
-        thap_dat.view(),
-        ref_panel.into_reader(),
-        cache,
-    );
+    let imputed = impute_chunk(chunk_id, thap_ind, thap_dat, ref_panel.into_reader(), cache);
     let ref_imputed = load_ref_output();
     assert!(imputed
         .into_iter()
         .zip(ref_imputed.into_iter())
-        .all(|(&a, b)| {
+        .all(|(a, b)| {
             let a: f32 = a.into();
             println!("a = {}", a);
             println!("b = {}", b);

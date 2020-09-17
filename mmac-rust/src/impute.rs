@@ -1,8 +1,9 @@
 use crate::block::Block;
 use crate::cache::*;
 use crate::ref_panel::RefPanelRead;
+use crate::symbol::Symbol;
 use crate::{Input, Real};
-use bitvec::prelude::BitSlice;
+use bitvec::prelude::{BitSlice, BitVec, Lsb0};
 use lazy_static::lazy_static;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use std::convert::TryFrom;
@@ -18,60 +19,65 @@ use leak_resistant_mod::*;
 
 const BACKGROUND: f32 = 1e-5;
 const ERR: f32 = 0.00999;
-const __NORM_THRESHOLD: f32 = 1e-20;
-const __NORM_SCALE_FACTOR: f32 = 1e10;
+
+#[cfg(not(feature = "leak-resistant"))]
+const NORM_THRESHOLD: f32 = 1e-20;
+#[cfg(not(feature = "leak-resistant"))]
+const NORM_SCALE_FACTOR: f32 = 1e10;
+
 const __E: f32 = 1e-30;
 
 lazy_static! {
-    static ref _NORM_THRESHOLD: Real = __NORM_THRESHOLD.into();
-    static ref _NORM_SCALE_FACTOR: Real = __NORM_SCALE_FACTOR.into();
     static ref _E: Real = __E.into();
 }
 
 pub fn impute_chunk(
     _chunk_id: usize,
-    thap_ind: ArrayView1<i8>,
-    thap_dat: ArrayView1<Input>,
+    mut thap_ind: impl Iterator<Item = bool>,
+    mut thap_dat: impl Iterator<Item = Input>,
     mut ref_panel: impl RefPanelRead,
     mut cache: impl Cache,
-) -> Array1<Real> {
-    assert!(thap_ind.len() == ref_panel.n_markers());
-    assert!(thap_dat.len() == thap_ind.iter().filter(|&&v| v == 1).count());
-
+) -> Vec<Real> {
     let m = ref_panel.n_haps();
     let m_real: Real = u16::try_from(m).unwrap().into();
-
-    let mut blockcache = cache.new_save();
-    let mut fwdcache = cache.new_save();
-    let mut fwdcache_norecom = cache.new_save();
-    let mut fwdcache_first = cache.new_save();
-    let mut fwdcache_all = cache.new_save();
-
-    // Forward pass
-    let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
-    let mut var_offset: usize = 0;
-
     let n_blocks = ref_panel.n_blocks();
 
-    let mut thap_dat_iter = thap_dat.iter().cloned();
+    let mut block_cache = cache.new_save();
+    let mut thap_ind_block_cache = cache.new_save();
+    let mut thap_dat_block_cache = cache.new_save();
+    let mut fwdprob_cache = cache.new_save();
+    let mut fwdprob_norecom_cache = cache.new_save();
+    let mut fwdprob_first_cache = cache.new_save();
+    let mut fwdprob_all_cache = cache.new_save();
 
+    let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
+
+    // Forward pass
     for b in 0..n_blocks {
+        let mut thap_dat_block = Vec::new();
+        let mut thap_ind_block = BitVec::<Lsb0, u64>::new();
         let block = if b == 0 {
             // First position emission (edge case)
             let first_block = ref_panel.next().unwrap();
-            if thap_ind[0] == 1 {
-                first_emission(
-                    thap_dat_iter.next().unwrap(),
-                    &first_block,
-                    sprob_all.view_mut(),
-                );
+            let first_ind = thap_ind.next().unwrap();
+            thap_ind_block.push(first_ind);
+            if first_ind {
+                let first_dat = thap_dat.next().unwrap();
+
+                #[cfg(not(feature = "leak-resistant"))]
+                thap_dat_block.push(first_dat);
+
+                #[cfg(feature = "leak-resistant")]
+                thap_dat_block.push(first_dat.expose());
+
+                first_emission(first_dat, &first_block, sprob_all.view_mut());
             }
             first_block
         } else {
             ref_panel.next().unwrap()
         };
 
-        fwdcache_all.push(sprob_all.clone());
+        fwdprob_all_cache.push(sprob_all.clone());
 
         let mut fwdprob = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
         let mut fwdprob_norecom =
@@ -88,13 +94,14 @@ pub fn impute_chunk(
 
         // Walk
         Zip::from(block.rprob.slice(s![..block.nvar - 1]))
-            .and(thap_ind.slice(s![var_offset + 1..var_offset + block.nvar]))
             .and(block.afreq.slice(s![1..]))
             .and(&block.rhap[1..])
             .and(fwdprob.slice_mut(s![1.., ..]).genrows_mut())
             .and(fwdprob_norecom.slice_mut(s![1.., ..]).genrows_mut())
             .apply(
-                |&rec, &tflag, &block_afreq, rhap_row, mut fwdprob_row, mut fwdprob_norecom_row| {
+                |&rec, &block_afreq, rhap_row, mut fwdprob_row, mut fwdprob_norecom_row| {
+                    let tflag = thap_ind.next().unwrap();
+                    thap_ind_block.push(tflag);
                     transition(
                         rec,
                         m_real,
@@ -103,8 +110,15 @@ pub fn impute_chunk(
                         sprob_norecom.view_mut(),
                     );
 
-                    if tflag == 1 {
-                        let tsym = thap_dat_iter.next().unwrap();
+                    if tflag {
+                        let tsym = thap_dat.next().unwrap();
+
+                        #[cfg(not(feature = "leak-resistant"))]
+                        thap_dat_block.push(tsym);
+
+                        #[cfg(feature = "leak-resistant")]
+                        thap_dat_block.push(tsym.expose());
+
                         later_emission(
                             tsym,
                             sprob.view_mut(),
@@ -114,7 +128,6 @@ pub fn impute_chunk(
                         );
                     }
 
-                    // Cache forward probabilities
                     fwdprob_row.assign(&sprob);
                     fwdprob_norecom_row.assign(&sprob_norecom);
                 },
@@ -132,33 +145,36 @@ pub fn impute_chunk(
                 sprob_norecom.view(),
             );
         }
-
-        var_offset += block.nvar - 1;
-
-        blockcache.push(block);
-        fwdcache.push(fwdprob);
-        fwdcache_norecom.push(fwdprob_norecom);
-        fwdcache_first.push(sprob_first);
+        thap_ind_block.shrink_to_fit();
+        thap_dat_block.shrink_to_fit();
+        thap_ind_block_cache.push(thap_ind_block);
+        thap_dat_block_cache.push(thap_dat_block);
+        block_cache.push(block);
+        fwdprob_cache.push(fwdprob);
+        fwdprob_norecom_cache.push(fwdprob_norecom);
+        fwdprob_first_cache.push(sprob_first);
     }
 
-    let mut blockcache = blockcache.into_load();
-    let mut fwdcache = fwdcache.into_load();
-    let mut fwdcache_norecom = fwdcache_norecom.into_load();
-    let mut fwdcache_first = fwdcache_first.into_load();
-    let mut fwdcache_all = fwdcache_all.into_load();
+    let mut block_cache = block_cache.into_load();
+    let mut thap_ind_block_cache = thap_ind_block_cache.into_load();
+    let mut thap_dat_block_cache = thap_dat_block_cache.into_load();
+    let mut fwdprob_cache = fwdprob_cache.into_load();
+    let mut fwdprob_norecom_cache = fwdprob_norecom_cache.into_load();
+    let mut fwdprob_first_cache = fwdprob_first_cache.into_load();
+    let mut fwdprob_all_cache = fwdprob_all_cache.into_load();
 
-    let mut imputed = unsafe { Array1::<Real>::uninitialized(thap_ind.len()) };
+    let mut output = Vec::new();
 
     // Backward pass
     let mut sprob_all = Array1::<Real>::ones(m);
-    let mut var_offset: usize = 0;
-    let mut thap_dat_iter = thap_dat.iter().cloned().rev();
     for b in (0..n_blocks).rev() {
-        let block = blockcache.pop().unwrap();
-        let fwdprob = fwdcache.pop().unwrap();
-        let fwdprob_norecom = fwdcache_norecom.pop().unwrap();
-        let fwdprob_first = fwdcache_first.pop().unwrap();
-        let fwdprob_all = fwdcache_all.pop().unwrap();
+        let block = block_cache.pop().unwrap();
+        let mut thap_ind_block = thap_ind_block_cache.pop().unwrap();
+        let mut thap_dat_block = thap_dat_block_cache.pop().unwrap();
+        let fwdprob = fwdprob_cache.pop().unwrap();
+        let fwdprob_norecom = fwdprob_norecom_cache.pop().unwrap();
+        let fwdprob_first = fwdprob_first_cache.pop().unwrap();
+        let fwdprob_all = fwdprob_all_cache.pop().unwrap();
 
         // Precompute joint fwd-bwd term for imputation;
         // same as "Constants" variable in minimac
@@ -190,9 +206,9 @@ pub fn impute_chunk(
         // Walk
         for j in (1..block.nvar).rev() {
             let rec = block.rprob[j - 1];
-            let varind = thap_ind.len() - (var_offset + (block.nvar - j));
+            //let varind = thap_ind.len() - (var_offset + (block.nvar - j));
 
-            imputed[varind] = impute(
+            output.push(impute(
                 jprob.view(),
                 block.clustsize.view(),
                 block.rhap[j].as_bitslice(),
@@ -202,10 +218,15 @@ pub fn impute_chunk(
                 sprob.view(),
                 sprob_first.view(),
                 sprob_norecom.view(),
-            );
+            ));
 
-            if thap_ind[varind] == 1 {
-                let tsym = thap_dat_iter.next().unwrap();
+            if thap_ind_block.pop().unwrap() {
+                #[cfg(not(feature = "leak-resistant"))]
+                let tsym = thap_dat_block.pop().unwrap();
+
+                #[cfg(feature = "leak-resistant")]
+                let tsym = Input::protect(thap_dat_block.pop().unwrap());
+
                 later_emission(
                     tsym,
                     sprob.view_mut(),
@@ -225,7 +246,7 @@ pub fn impute_chunk(
 
             // Impute very first position (edge case)
             if b == 0 && j == 1 {
-                imputed[0] = impute(
+                output.push(impute(
                     jprob.view(),
                     block.clustsize.view(),
                     block.rhap[0].as_bitslice(),
@@ -235,7 +256,7 @@ pub fn impute_chunk(
                     sprob.view(),
                     sprob_first.view(),
                     sprob_norecom.view(),
-                );
+                ));
             }
         }
 
@@ -250,9 +271,8 @@ pub fn impute_chunk(
                 sprob_norecom.view(),
             );
         }
-        var_offset += block.nvar - 1;
     }
-    imputed
+    output.into_iter().rev().collect()
 }
 
 fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real> {
@@ -275,10 +295,10 @@ fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real
     }
 }
 
-fn single_emission(tsym: Input, block_afreq: f32, rhap: i8) -> Real {
+fn single_emission(tsym: Input, block_afreq: f32, rhap: Symbol) -> Real {
     #[cfg(not(feature = "leak-resistant"))]
     {
-        let afreq = if tsym == 1 {
+        let afreq = if tsym == Symbol::Alt {
             block_afreq
         } else {
             1. - block_afreq
@@ -293,7 +313,7 @@ fn single_emission(tsym: Input, block_afreq: f32, rhap: i8) -> Real {
     #[cfg(feature = "leak-resistant")]
     Real::select_from_4_f32(
         tsym.tp_eq(&1),
-        tsym.tp_eq(&rhap),
+        tsym.tp_eq(&(rhap as i8)),
         (1. - ERR) + ERR * block_afreq + BACKGROUND,
         ERR * block_afreq + BACKGROUND,
         (1. - ERR) + ERR * (1. - block_afreq) + BACKGROUND,
@@ -305,9 +325,9 @@ fn first_emission(tsym: Input, block: &Block, mut sprob_all: ArrayViewMut1<Real>
     let afreq = block.afreq[0];
 
     #[cfg(not(feature = "leak-resistant"))]
-    if tsym != -1 {
+    if tsym != Symbol::Missing {
         Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
-            let emi = single_emission(tsym, afreq, block.rhap[0][i as usize] as i8);
+            let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
             *p *= emi
         });
     }
@@ -316,7 +336,7 @@ fn first_emission(tsym: Input, block: &Block, mut sprob_all: ArrayViewMut1<Real>
     {
         let cond = tsym.tp_not_eq(&-1);
         Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
-            let emi = single_emission(tsym, afreq, block.rhap[0][i as usize] as i8);
+            let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
             *p = cond.select(emi, *p);
         });
     }
@@ -330,13 +350,13 @@ fn later_emission(
     rhap_row: &BitSlice,
 ) {
     #[cfg(not(feature = "leak-resistant"))]
-    if tsym != -1 {
+    if tsym != Symbol::Missing {
         sprob
             .iter_mut()
             .zip(sprob_norecom.iter_mut())
             .zip(rhap_row.iter())
             .for_each(|((p, p_norecom), &rhap)| {
-                let emi = single_emission(tsym, block_afreq, rhap as i8);
+                let emi = single_emission(tsym, block_afreq, rhap.into());
                 *p *= emi;
                 *p_norecom *= emi;
             });
@@ -349,7 +369,7 @@ fn later_emission(
             .zip(sprob_norecom.iter_mut())
             .zip(rhap_row.iter())
             .for_each(|((p, p_norecom), &rhap)| {
-                let emi = single_emission(tsym, block_afreq, rhap as i8);
+                let emi = single_emission(tsym, block_afreq, rhap.into());
                 *p = cond.select(*p * emi, *p);
                 *p_norecom = cond.select(*p_norecom * emi, *p_norecom);
             });
@@ -360,15 +380,10 @@ fn later_emission(
 #[allow(non_snake_case)]
 fn normalize(sprob_tot: &mut Real, complement: &mut Real, mut sprob_norecom: ArrayViewMut1<Real>) {
     #[cfg(not(feature = "leak-resistant"))]
-    {
-        let NORM_THRESHOLD = *_NORM_THRESHOLD;
-        let NORM_SCALE_FACTOR = *_NORM_SCALE_FACTOR;
-
-        if *sprob_tot < NORM_THRESHOLD {
-            *sprob_tot *= NORM_SCALE_FACTOR;
-            *complement *= NORM_SCALE_FACTOR;
-            sprob_norecom *= NORM_SCALE_FACTOR;
-        }
+    if *sprob_tot < NORM_THRESHOLD {
+        *sprob_tot *= NORM_SCALE_FACTOR;
+        *complement *= NORM_SCALE_FACTOR;
+        sprob_norecom *= NORM_SCALE_FACTOR;
     }
 
     #[cfg(feature = "leak-resistant")]
