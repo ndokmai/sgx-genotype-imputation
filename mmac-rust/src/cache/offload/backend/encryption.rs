@@ -14,27 +14,23 @@ type Nonce = GenericArray<u8, NonceSize>;
 type Key = GenericArray<u8, KeySize>;
 
 pub struct EncryptedCacheBackend<B> {
-    cipher: Cipher,
     backend: B,
 }
 
 impl<B: CacheBackend> EncryptedCacheBackend<B> {
     pub fn new(backend: B) -> Self {
-        let mut key = Key::default();
-        thread_rng().fill(key.as_mut_slice());
-        Self {
-            cipher: Cipher::new(&key),
-            backend,
-        }
+        Self { backend }
     }
 }
 
 impl<B: CacheBackend> CacheBackend for EncryptedCacheBackend<B> {
     type WriteBackend = EncryptedCacheWriteBackend<B::WriteBackend>;
     fn new_write(&mut self) -> Self::WriteBackend {
+        let mut key = Key::default();
+        thread_rng().fill(key.as_mut_slice());
         EncryptedCacheWriteBackend {
             counter: 0,
-            cipher: self.cipher.clone(),
+            cipher: Cipher::new(&key),
             backend: self.backend.new_write(),
         }
     }
