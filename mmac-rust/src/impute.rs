@@ -28,6 +28,233 @@ lazy_static! {
     static ref _E: Real = __E.into();
 }
 
+pub fn impute_chunk(
+    _chunk_id: usize,
+    thap_ind: ArrayView1<i8>,
+    thap_dat: ArrayView1<Input>,
+    mut ref_panel: impl RefPanelRead,
+    mut cache: impl Cache,
+) -> Array1<Real> {
+    assert!(thap_ind.len() == ref_panel.n_markers());
+    assert!(thap_dat.len() == thap_ind.iter().filter(|&&v| v == 1).count());
+
+    let m = ref_panel.n_haps();
+    let m_real: Real = u16::try_from(m).unwrap().into();
+
+    let mut blockcache = cache.new_save();
+    let mut fwdcache = cache.new_save();
+    let mut fwdcache_norecom = cache.new_save();
+    let mut fwdcache_first = cache.new_save();
+    let mut fwdcache_all = cache.new_save();
+
+    // Forward pass
+    let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
+    let mut var_offset: usize = 0;
+
+    let n_blocks = ref_panel.n_blocks();
+
+    let mut thap_dat_iter = thap_dat.iter().cloned();
+
+    for b in 0..n_blocks {
+        let block = if b == 0 {
+            // First position emission (edge case)
+            let first_block = ref_panel.next().unwrap();
+            if thap_ind[0] == 1 {
+                first_emission(
+                    thap_dat_iter.next().unwrap(),
+                    &first_block,
+                    sprob_all.view_mut(),
+                );
+            }
+            first_block
+        } else {
+            ref_panel.next().unwrap()
+        };
+
+        fwdcache_all.push(sprob_all.clone());
+
+        let mut fwdprob = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
+        let mut fwdprob_norecom =
+            unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
+
+        let mut sprob = fold_probabilities(sprob_all.view(), &block);
+
+        let sprob_first = sprob.clone();
+        let mut sprob_norecom = sprob.clone();
+
+        // Cache forward probabilities at first position
+        fwdprob.row_mut(0).assign(&sprob);
+        fwdprob_norecom.row_mut(0).assign(&sprob_norecom);
+
+        // Walk
+        Zip::from(block.rprob.slice(s![..block.nvar - 1]))
+            .and(thap_ind.slice(s![var_offset + 1..var_offset + block.nvar]))
+            .and(block.afreq.slice(s![1..]))
+            .and(&block.rhap[1..])
+            .and(fwdprob.slice_mut(s![1.., ..]).genrows_mut())
+            .and(fwdprob_norecom.slice_mut(s![1.., ..]).genrows_mut())
+            .apply(
+                |&rec, &tflag, &block_afreq, rhap_row, mut fwdprob_row, mut fwdprob_norecom_row| {
+                    transition(
+                        rec,
+                        m_real,
+                        block.clustsize.view(),
+                        sprob.view_mut(),
+                        sprob_norecom.view_mut(),
+                    );
+
+                    if tflag == 1 {
+                        let tsym = thap_dat_iter.next().unwrap();
+                        later_emission(
+                            tsym,
+                            sprob.view_mut(),
+                            sprob_norecom.view_mut(),
+                            block_afreq,
+                            rhap_row,
+                        );
+                    }
+
+                    // Cache forward probabilities
+                    fwdprob_row.assign(&sprob);
+                    fwdprob_norecom_row.assign(&sprob_norecom);
+                },
+            );
+
+        let sprob_recom = &sprob - &sprob_norecom;
+
+        // Skip last block
+        if b < n_blocks - 1 {
+            unfold_probabilities(
+                &block,
+                sprob_all.view_mut(),
+                sprob_first.view(),
+                sprob_recom.view(),
+                sprob_norecom.view(),
+            );
+        }
+
+        var_offset += block.nvar - 1;
+
+        blockcache.push(block);
+        fwdcache.push(fwdprob);
+        fwdcache_norecom.push(fwdprob_norecom);
+        fwdcache_first.push(sprob_first);
+    }
+
+    let mut blockcache = blockcache.into_load();
+    let mut fwdcache = fwdcache.into_load();
+    let mut fwdcache_norecom = fwdcache_norecom.into_load();
+    let mut fwdcache_first = fwdcache_first.into_load();
+    let mut fwdcache_all = fwdcache_all.into_load();
+
+    let mut imputed = unsafe { Array1::<Real>::uninitialized(thap_ind.len()) };
+
+    // Backward pass
+    let mut sprob_all = Array1::<Real>::ones(m);
+    let mut var_offset: usize = 0;
+    let mut thap_dat_iter = thap_dat.iter().cloned().rev();
+    for b in (0..n_blocks).rev() {
+        let block = blockcache.pop().unwrap();
+        let fwdprob = fwdcache.pop().unwrap();
+        let fwdprob_norecom = fwdcache_norecom.pop().unwrap();
+        let fwdprob_first = fwdcache_first.pop().unwrap();
+        let fwdprob_all = fwdcache_all.pop().unwrap();
+
+        // Precompute joint fwd-bwd term for imputation;
+        // same as "Constants" variable in minimac
+        #[cfg(not(feature = "leak-resistant"))]
+        let jprob = {
+            let mut jprob = Array1::<Real>::zeros(block.nuniq);
+            Zip::from(&block.indmap)
+                .and(&fwdprob_all)
+                .and(&sprob_all)
+                .apply(|&ind, &c, &p| {
+                    jprob[ind as usize] += c * p;
+                });
+            jprob
+        };
+
+        #[cfg(feature = "leak-resistant")]
+        let jprob = {
+            let mut jprob = vec![Bacc::init(); block.nuniq];
+            for ((&ind, &c), &p) in block.indmap.iter().zip(&fwdprob_all).zip(sprob_all.iter()) {
+                jprob[ind as usize] += c * p;
+            }
+            Array1::from(jprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
+        };
+
+        let mut sprob = fold_probabilities(sprob_all.view(), &block);
+        let sprob_first = sprob.clone();
+        let mut sprob_norecom = sprob.clone();
+
+        // Walk
+        for j in (1..block.nvar).rev() {
+            let rec = block.rprob[j - 1];
+            let varind = thap_ind.len() - (var_offset + (block.nvar - j));
+
+            imputed[varind] = impute(
+                jprob.view(),
+                block.clustsize.view(),
+                block.rhap[j].as_bitslice(),
+                fwdprob.slice(s![j, ..]),
+                fwdprob_first.view(),
+                fwdprob_norecom.slice(s![j, ..]),
+                sprob.view(),
+                sprob_first.view(),
+                sprob_norecom.view(),
+            );
+
+            if thap_ind[varind] == 1 {
+                let tsym = thap_dat_iter.next().unwrap();
+                later_emission(
+                    tsym,
+                    sprob.view_mut(),
+                    sprob_norecom.view_mut(),
+                    block.afreq[j],
+                    block.rhap[j].as_bitslice(),
+                );
+            }
+
+            transition(
+                rec,
+                m_real,
+                block.clustsize.view(),
+                sprob.view_mut(),
+                sprob_norecom.view_mut(),
+            );
+
+            // Impute very first position (edge case)
+            if b == 0 && j == 1 {
+                imputed[0] = impute(
+                    jprob.view(),
+                    block.clustsize.view(),
+                    block.rhap[0].as_bitslice(),
+                    fwdprob.slice(s![0, ..]),
+                    fwdprob_first.view(),
+                    fwdprob_norecom.slice(s![0, ..]),
+                    sprob.view(),
+                    sprob_first.view(),
+                    sprob_norecom.view(),
+                );
+            }
+        }
+
+        let sprob_recom = &sprob - &sprob_norecom;
+
+        if b > 0 {
+            unfold_probabilities(
+                &block,
+                sprob_all.view_mut(),
+                sprob_first.view(),
+                sprob_recom.view(),
+                sprob_norecom.view(),
+            );
+        }
+        var_offset += block.nvar - 1;
+    }
+    imputed
+}
+
 fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real> {
     #[cfg(not(feature = "leak-resistant"))]
     {
@@ -239,231 +466,4 @@ fn impute(
         (p0.result(), p1.result())
     };
     p1 / (p1 + p0)
-}
-
-pub fn impute_chunk(
-    _chunk_id: usize,
-    thap_ind: ArrayView1<i8>,
-    thap_dat: ArrayView1<Input>,
-    mut ref_panel: impl RefPanelRead,
-    mut cache: impl Cache,
-) -> Array1<Real> {
-    assert!(thap_ind.len() == ref_panel.n_markers());
-    assert!(thap_dat.len() == thap_ind.iter().filter(|&&v| v == 1).count());
-
-    let m = ref_panel.n_haps();
-    let m_real: Real = u16::try_from(m).unwrap().into();
-
-    let mut blockcache = cache.new_save();
-    let mut fwdcache = cache.new_save();
-    let mut fwdcache_norecom = cache.new_save();
-    let mut fwdcache_first = cache.new_save();
-    let mut fwdcache_all = cache.new_save();
-
-    // Forward pass
-    let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
-    let mut var_offset: usize = 0;
-
-    let n_blocks = ref_panel.n_blocks();
-
-    let mut thap_dat_iter = thap_dat.iter().cloned();
-
-    for b in 0..n_blocks {
-        let block = if b == 0 {
-            // First position emission (edge case)
-            let first_block = ref_panel.next_block().unwrap();
-            if thap_ind[0] == 1 {
-                first_emission(
-                    thap_dat_iter.next().unwrap(),
-                    &first_block,
-                    sprob_all.view_mut(),
-                );
-            }
-            first_block
-        } else {
-            ref_panel.next_block().unwrap()
-        };
-
-        fwdcache_all.push(sprob_all.clone());
-
-        let mut fwdprob = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
-        let mut fwdprob_norecom =
-            unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
-
-        let mut sprob = fold_probabilities(sprob_all.view(), &block);
-
-        let sprob_first = sprob.clone();
-        let mut sprob_norecom = sprob.clone();
-
-        // Cache forward probabilities at first position
-        fwdprob.row_mut(0).assign(&sprob);
-        fwdprob_norecom.row_mut(0).assign(&sprob_norecom);
-
-        // Walk
-        Zip::from(block.rprob.slice(s![..block.nvar - 1]))
-            .and(thap_ind.slice(s![var_offset + 1..var_offset + block.nvar]))
-            .and(block.afreq.slice(s![1..]))
-            .and(&block.rhap[1..])
-            .and(fwdprob.slice_mut(s![1.., ..]).genrows_mut())
-            .and(fwdprob_norecom.slice_mut(s![1.., ..]).genrows_mut())
-            .apply(
-                |&rec, &tflag, &block_afreq, rhap_row, mut fwdprob_row, mut fwdprob_norecom_row| {
-                    transition(
-                        rec,
-                        m_real,
-                        block.clustsize.view(),
-                        sprob.view_mut(),
-                        sprob_norecom.view_mut(),
-                    );
-
-                    if tflag == 1 {
-                        let tsym = thap_dat_iter.next().unwrap();
-                        later_emission(
-                            tsym,
-                            sprob.view_mut(),
-                            sprob_norecom.view_mut(),
-                            block_afreq,
-                            rhap_row,
-                        );
-                    }
-
-                    // Cache forward probabilities
-                    fwdprob_row.assign(&sprob);
-                    fwdprob_norecom_row.assign(&sprob_norecom);
-                },
-            );
-
-        let sprob_recom = &sprob - &sprob_norecom;
-
-        // Skip last block
-        if b < n_blocks - 1 {
-            unfold_probabilities(
-                &block,
-                sprob_all.view_mut(),
-                sprob_first.view(),
-                sprob_recom.view(),
-                sprob_norecom.view(),
-            );
-        }
-
-        var_offset += block.nvar - 1;
-
-        blockcache.push(block);
-        fwdcache.push(fwdprob);
-        fwdcache_norecom.push(fwdprob_norecom);
-        fwdcache_first.push(sprob_first);
-    }
-
-    let mut blockcache = blockcache.into_load();
-    let mut fwdcache = fwdcache.into_load();
-    let mut fwdcache_norecom = fwdcache_norecom.into_load();
-    let mut fwdcache_first = fwdcache_first.into_load();
-    let mut fwdcache_all = fwdcache_all.into_load();
-
-    let mut imputed = unsafe { Array1::<Real>::uninitialized(thap_ind.len()) };
-
-    // Backward pass
-    let mut sprob_all = Array1::<Real>::ones(m);
-    let mut var_offset: usize = 0;
-    let mut thap_dat_iter = thap_dat.iter().cloned().rev();
-    for b in (0..n_blocks).rev() {
-        let block = blockcache.pop().unwrap();
-        let fwdprob = fwdcache.pop().unwrap();
-        let fwdprob_norecom = fwdcache_norecom.pop().unwrap();
-        let fwdprob_first = fwdcache_first.pop().unwrap();
-        let fwdprob_all = fwdcache_all.pop().unwrap();
-
-        // Precompute joint fwd-bwd term for imputation;
-        // same as "Constants" variable in minimac
-        #[cfg(not(feature = "leak-resistant"))]
-        let jprob = {
-            let mut jprob = Array1::<Real>::zeros(block.nuniq);
-            Zip::from(&block.indmap)
-                .and(&fwdprob_all)
-                .and(&sprob_all)
-                .apply(|&ind, &c, &p| {
-                    jprob[ind as usize] += c * p;
-                });
-            jprob
-        };
-
-        #[cfg(feature = "leak-resistant")]
-        let jprob = {
-            let mut jprob = vec![Bacc::init(); block.nuniq];
-            for ((&ind, &c), &p) in block.indmap.iter().zip(&fwdprob_all).zip(sprob_all.iter()) {
-                jprob[ind as usize] += c * p;
-            }
-            Array1::from(jprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
-        };
-
-        let mut sprob = fold_probabilities(sprob_all.view(), &block);
-        let sprob_first = sprob.clone();
-        let mut sprob_norecom = sprob.clone();
-
-        // Walk
-        for j in (1..block.nvar).rev() {
-            let rec = block.rprob[j - 1];
-            let varind = thap_ind.len() - (var_offset + (block.nvar - j));
-
-            imputed[varind] = impute(
-                jprob.view(),
-                block.clustsize.view(),
-                block.rhap[j].as_bitslice(),
-                fwdprob.slice(s![j, ..]),
-                fwdprob_first.view(),
-                fwdprob_norecom.slice(s![j, ..]),
-                sprob.view(),
-                sprob_first.view(),
-                sprob_norecom.view(),
-            );
-
-            if thap_ind[varind] == 1 {
-                let tsym = thap_dat_iter.next().unwrap();
-                later_emission(
-                    tsym,
-                    sprob.view_mut(),
-                    sprob_norecom.view_mut(),
-                    block.afreq[j],
-                    block.rhap[j].as_bitslice(),
-                );
-            }
-
-            transition(
-                rec,
-                m_real,
-                block.clustsize.view(),
-                sprob.view_mut(),
-                sprob_norecom.view_mut(),
-            );
-
-            // Impute very first position (edge case)
-            if b == 0 && j == 1 {
-                imputed[0] = impute(
-                    jprob.view(),
-                    block.clustsize.view(),
-                    block.rhap[0].as_bitslice(),
-                    fwdprob.slice(s![0, ..]),
-                    fwdprob_first.view(),
-                    fwdprob_norecom.slice(s![0, ..]),
-                    sprob.view(),
-                    sprob_first.view(),
-                    sprob_norecom.view(),
-                );
-            }
-        }
-
-        let sprob_recom = &sprob - &sprob_norecom;
-
-        if b > 0 {
-            unfold_probabilities(
-                &block,
-                sprob_all.view_mut(),
-                sprob_first.view(),
-                sprob_recom.view(),
-                sprob_norecom.view(),
-            );
-        }
-        var_offset += block.nvar - 1;
-    }
-    imputed
 }

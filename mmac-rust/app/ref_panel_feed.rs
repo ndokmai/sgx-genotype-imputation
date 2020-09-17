@@ -1,4 +1,4 @@
-use mmac::RefPanel;
+use mmac::{RefPanel, RefPanelWrite, RefPanelWriter};
 use std::io::BufWriter;
 use std::net::TcpListener;
 use std::path::Path;
@@ -16,7 +16,7 @@ fn main() {
     );
 
     let now = std::time::Instant::now();
-    let ref_panel = RefPanel::load(chunk_id, &ref_panel_path);
+    let mut ref_panel = RefPanelWriter::new(chunk_id, &ref_panel_path);
 
     eprintln!(
         "Reference panel load time: {} ms",
@@ -32,5 +32,6 @@ fn main() {
         .accept()
         .unwrap()
         .0;
+
     ref_panel.write(BufWriter::new(stream)).unwrap();
 }

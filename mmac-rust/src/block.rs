@@ -17,9 +17,9 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn read(m: usize, mut lines_iter: impl Iterator<Item = Result<String>>) -> Self {
+    pub fn read(m: usize, mut lines_iter: impl Iterator<Item = Result<String>>) -> Option<Self> {
         // read block metadata
-        let line = lines_iter.next().unwrap().unwrap();
+        let line = lines_iter.next()?.unwrap();
         let mut iter = line.split_ascii_whitespace();
         let tok = iter.nth(7).unwrap(); // info field
         let tok = tok.split(";").collect::<Vec<_>>();
@@ -52,7 +52,7 @@ impl Block {
 
         // read block data
         for _ in 0..nvar {
-            let line = lines_iter.next().unwrap().unwrap();
+            let line = lines_iter.next()?.unwrap();
             let mut iter = line.split_ascii_whitespace();
             let tok = iter.nth(7).unwrap(); // info field
             let tok = tok.split(";").collect::<Vec<_>>();
@@ -96,7 +96,7 @@ impl Block {
             );
         }
 
-        Self {
+        Some(Self {
             indmap: Array1::from(indmap),
             nvar,
             nuniq,
@@ -105,6 +105,6 @@ impl Block {
             //eprob: Array1::from(eprob),
             rprob: Array1::from(rprob),
             afreq: Array1::from(afreq),
-        }
+        })
     }
 }
