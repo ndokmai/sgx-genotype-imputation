@@ -60,7 +60,10 @@ fn main() {
     let thap_ind = load_chunk_from_input_ind(chunk_id, &input_ind_path);
     let thap_dat = load_chunk_from_input_dat(chunk_id, &input_dat_path);
 
-    eprintln!("Main: input load time: {} ms", (Instant::now() - now).as_millis());
+    eprintln!(
+        "Main: input load time: {} ms",
+        (Instant::now() - now).as_millis()
+    );
 
     let stream = tcp_keep_connecting(SocketAddr::from_str("127.0.0.1:7777").unwrap());
 
@@ -79,7 +82,7 @@ fn main() {
     eprintln!("Main: connected to cache_server");
 
     eprintln!("Main: begin imputation");
-    
+
     let imputed = impute_chunk(
         chunk_id,
         thap_ind.view(),
@@ -88,7 +91,10 @@ fn main() {
         cache,
     );
 
-    eprintln!("Main: imputation time: {} ms", (Instant::now() - now).as_millis());
+    eprintln!(
+        "Main: imputation time: {} ms",
+        (Instant::now() - now).as_millis()
+    );
 
     let mut file = File::create(OUTPUT_FILE).unwrap();
     writeln!(

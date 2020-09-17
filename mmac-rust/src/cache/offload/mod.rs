@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::io::{Error, ErrorKind, Result};
 use std::marker::PhantomData;
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-use std::thread::{spawn, JoinHandle};
+use std::thread::spawn;
 
 pub struct OffloadCache<B> {
     bound: usize,
@@ -41,7 +41,6 @@ where
     local: VecDeque<T>,
     sender: SyncSender<T>,
     retriever: Receiver<T>,
-    join_handle: JoinHandle<()>,
     _phantom: PhantomData<B>,
 }
 
@@ -54,13 +53,12 @@ where
     pub fn new(bound: usize, cache_backend: B::WriteBackend) -> Self {
         let (s1, r1) = sync_channel::<T>(bound);
         let (s2, r2) = sync_channel::<T>(bound);
-        let join_handle = spawn(move || Self::offload_proc(r1, s2, cache_backend).unwrap());
+        spawn(move || Self::offload_proc(r1, s2, cache_backend).unwrap());
         Self {
             bound,
             local: VecDeque::with_capacity(bound),
             sender: s1,
             retriever: r2,
-            join_handle,
             _phantom: PhantomData,
         }
     }
@@ -110,7 +108,6 @@ where
         OffloadCacheLoad {
             local: self.local,
             retriever: self.retriever,
-            join_handle: Some(self.join_handle),
         }
     }
 }
@@ -118,7 +115,6 @@ where
 pub struct OffloadCacheLoad<T> {
     local: VecDeque<T>,
     retriever: Receiver<T>,
-    join_handle: Option<JoinHandle<()>>,
 }
 
 impl<T> OffloadCacheLoad<T> {
@@ -128,12 +124,6 @@ impl<T> OffloadCacheLoad<T> {
         } else {
             self.local.pop_front()
         }
-    }
-}
-
-impl<T> Drop for OffloadCacheLoad<T> {
-    fn drop(&mut self) {
-        self.join_handle.take().unwrap().join().unwrap();
     }
 }
 

@@ -7,6 +7,8 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 use std::io::{Error, ErrorKind, Result, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::mpsc::{sync_channel, Receiver};
+use std::thread::spawn;
 
 pub struct TcpCacheBackend(SocketAddr);
 
@@ -24,7 +26,7 @@ impl TcpCacheBackend {
         for stream in listener.incoming() {
             let mut stream = BufStream::new(stream.unwrap());
             let mut cache_save = cache_backend.new_save();
-            std::thread::spawn(move || {
+            spawn(move || {
                 loop {
                     let cmd: Cmd = stream.read_u8().unwrap().into();
                     match cmd {
@@ -62,7 +64,20 @@ impl CacheWriteBackend for TcpCacheWriteBackend {
     fn into_read(mut self) -> Self::ReadBackend {
         self.0.write_u8(Cmd::Pop.into()).unwrap();
         self.0.flush().unwrap();
-        TcpCacheReadBackend(self.0)
+
+        let (s, r) = sync_channel(20);
+
+        spawn(move || {
+            let mut stream = self.0;
+            loop {
+                if let Ok(buffer) = bincode::deserialize_from(&mut stream) {
+                    s.send(buffer).unwrap();
+                } else {
+                    break;
+                }
+            }
+        });
+        TcpCacheReadBackend(r)
     }
 
     fn push_cache_item<T: Serialize>(&mut self, v: &T) -> Result<()> {
@@ -72,12 +87,11 @@ impl CacheWriteBackend for TcpCacheWriteBackend {
     }
 }
 
-pub struct TcpCacheReadBackend(BufStream<TcpStream>);
+pub struct TcpCacheReadBackend(Receiver<Vec<u8>>);
 
 impl CacheReadBackend for TcpCacheReadBackend {
     fn pop_cache_item<T: for<'de> Deserialize<'de>>(&mut self) -> Result<T> {
-        let buffer: Vec<u8> =
-            bincode::deserialize_from(&mut self.0).map_err(|e| Error::new(ErrorKind::Other, e))?;
+        let buffer = self.0.recv().map_err(|e| Error::new(ErrorKind::Other, e))?;
         Ok(bincode::deserialize_from(&buffer[..]).unwrap())
     }
 }
