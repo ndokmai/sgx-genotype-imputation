@@ -31,8 +31,7 @@ lazy_static! {
     static ref _E: Real = __E.into();
 }
 
-pub fn impute_chunk(
-    _chunk_id: usize,
+pub fn impute_all(
     mut thap_ind: impl Iterator<Item = bool>,
     mut thap_dat: impl Iterator<Item = Input>,
     mut ref_panel: impl RefPanelRead,

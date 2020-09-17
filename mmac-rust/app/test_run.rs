@@ -1,17 +1,13 @@
-use mmac::cache::{EncryptedCacheBackend, OffloadCache, TcpCacheBackend};
-use mmac::{impute_chunk, tcp_keep_connecting, InputReader, OwnedInput, RefPanelReader};
+use mmac::*;
 use std::fs::File;
 use std::io::BufReader;
 use std::io::Write;
-use std::net::SocketAddr;
-use std::path::Path;
+use std::net::{SocketAddr, TcpListener};
 use std::process::Command;
 use std::str::FromStr;
 use std::time::Instant;
 use std::writeln;
 
-const INPUT_IND_FILE: &'static str = "input_ind.txt";
-const INPUT_DAT_FILE: &'static str = "input_dat.txt";
 const OUTPUT_FILE: &'static str = "output.txt";
 
 fn main() {
@@ -26,48 +22,59 @@ fn main() {
     #[cfg(not(debug_assertions))]
     args.push("--release");
 
-    let mut feed = Command::new("cargo")
+    eprintln!("Main: spawn ref_panel_feed");
+    let mut ref_panel_feed = Command::new("cargo")
         .arg("+nightly")
+        .arg("-q")
         .arg("run")
         .args(&["--bin", "ref_panel_feed"])
         .args(&args[..])
         .spawn()
         .unwrap();
-    eprintln!("Main: spawn ref_ref_panel_feed");
 
+
+    eprintln!("Main: spawn cache_server");
     let mut cache_server = Command::new("cargo")
         .arg("+nightly")
+        .arg("-q")
         .arg("run")
         .args(&["--bin", "cache_server"])
         .args(&args[..])
         .spawn()
         .unwrap();
 
-    eprintln!("Main: spawn cache_server");
 
-    let chunk_id = 0;
-    let input_ind_path = Path::new(INPUT_IND_FILE);
-    let input_dat_path = Path::new(INPUT_DAT_FILE);
+    eprintln!("Main: spawn input_feed");
 
-    eprintln!(
-        "Main: loading chunk {} from input ({} and {})",
-        chunk_id, INPUT_IND_FILE, INPUT_DAT_FILE
-    );
-    let now = std::time::Instant::now();
-    let (thap_ind, thap_dat) = OwnedInput::load(&input_ind_path, &input_dat_path).into_pair_iter();
+    let mut input_feed = Command::new("cargo")
+        .arg("+nightly")
+        .arg("-q")
+        .arg("run")
+        .args(&["--bin", "input_feed"])
+        .args(&args[..])
+        .spawn()
+        .unwrap();
 
-    eprintln!(
-        "Main: input load time: {} ms",
-        (Instant::now() - now).as_millis()
-    );
-
-    let stream = tcp_keep_connecting(SocketAddr::from_str("127.0.0.1:7777").unwrap());
+    let ref_panel_stream = TcpListener::bind("localhost:7777")
+        .unwrap()
+        .accept()
+        .unwrap()
+        .0;
 
     eprintln!("Main: connected to ref_panel_feed");
 
-    let ref_panel_reader = RefPanelReader::new(100, BufReader::new(stream)).unwrap();
+    let ref_panel_reader = RefPanelReader::new(100, BufReader::new(ref_panel_stream)).unwrap();
 
-    let now = std::time::Instant::now();
+    let input_stream = TcpListener::bind("localhost:7778")
+        .unwrap()
+        .accept()
+        .unwrap()
+        .0;
+
+    eprintln!("Main: connected to input_feed");
+
+    let (thap_ind, thap_dat) = InputReader::new(1000, input_stream).into_pair_iter();
+
     let cache = OffloadCache::new(
         50,
         EncryptedCacheBackend::new(TcpCacheBackend::new(
@@ -79,7 +86,9 @@ fn main() {
 
     eprintln!("Main: begin imputation");
 
-    let imputed = impute_chunk(chunk_id, thap_ind, thap_dat, ref_panel_reader, cache);
+    let now = std::time::Instant::now();
+
+    let imputed = impute_all(thap_ind, thap_dat, ref_panel_reader, cache);
 
     eprintln!(
         "Main: imputation time: {} ms",
@@ -100,7 +109,10 @@ fn main() {
 
     eprintln!("Main: imputation result written to {}", OUTPUT_FILE);
 
-    let ecode = feed.wait().unwrap();
+    let ecode = input_feed.wait().unwrap();
+    assert!(ecode.success());
+
+    let ecode = ref_panel_feed.wait().unwrap();
     assert!(ecode.success());
 
     cache_server.kill().unwrap();

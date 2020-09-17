@@ -76,6 +76,34 @@ impl std::str::FromStr for Symbol {
 pub struct SymbolVec<T: BitStore>(BitVec<Lsb0, T>);
 
 impl<T: BitStore> SymbolVec<T> {
+    pub fn new() -> Self {
+        Self(BitVec::new())
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(BitVec::with_capacity(capacity*2))
+    }
+
+    pub fn shrink_to(&mut self, new_len: usize) {
+        assert!(new_len <= self.0.len());
+        self.0.resize(new_len*2, false);
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.0.shrink_to_fit()
+    }
+
+    pub fn push(&mut self, s: Symbol) {
+        let (first, second) = s.into();
+        self.0.push(first);
+        self.0.push(second);
+    }
+
+
+    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
+        Iter(self.0.as_bitslice().iter())
+    }
+
     pub fn into_inner(self) -> BitVec<Lsb0, T> {
         self.0
     }
@@ -88,25 +116,6 @@ impl<T: BitStore> SymbolVec<T> {
         self.0.as_bitslice()
     }
 
-    pub fn push(&mut self, s: Symbol) {
-        let (first, second) = s.into();
-        self.0.push(first);
-        self.0.push(second);
-    }
-
-    pub fn shrink_to_fit(&mut self) {
-        self.0.shrink_to_fit()
-    }
-}
-
-impl<T: BitStore> SymbolVec<T> {
-    pub fn new() -> Self {
-        Self(BitVec::new())
-    }
-
-    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
-        Iter(self.0.as_bitslice().iter())
-    }
 }
 
 impl<T: BitStore> From<BitVec<Lsb0, T>> for SymbolVec<T> {
@@ -145,6 +154,17 @@ impl<'a, T: BitStore> Iterator for Iter<'a, T> {
     }
 }
 
+impl<T: BitStore> std::iter::FromIterator<i8> for SymbolVec<T> {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = i8>,
+    {
+        iter.into_iter()
+            .map(|s| Into::<Symbol>::into(s))
+            .collect()
+    }
+}
+
 impl<T: BitStore> std::iter::FromIterator<Symbol> for SymbolVec<T> {
     fn from_iter<I>(iter: I) -> Self
     where
@@ -174,4 +194,21 @@ impl<T: BitStore> std::iter::FromIterator<(bool, bool)> for SymbolVec<T> {
         inner.shrink_to_fit();
         Self(inner)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn symbolvec_test() {
+        let reference = vec![0i8, -1, 1, 0, -1, -1, 0, 0, 1];
+        let symbol_vec: SymbolVec<u64> = reference.iter().cloned().collect();
+        let result = symbol_vec.into_iter().map(|v| v as i8).collect::<Vec<_>>();
+        assert_eq!(reference, result);
+
+        let symbol_vec: SymbolVec<u8> = reference.iter().cloned().collect();
+        let result = symbol_vec.into_iter().map(|v| v as i8).collect::<Vec<_>>();
+        assert_eq!(reference, result);
+    } 
 }

@@ -1,6 +1,7 @@
 #![feature(const_fn)]
 #![feature(seek_convenience)]
 #![feature(generic_associated_types)]
+#![feature(type_alias_impl_trait)]
 #![allow(incomplete_features)]
 
 pub mod block;

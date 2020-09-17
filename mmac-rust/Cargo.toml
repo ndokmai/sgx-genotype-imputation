@@ -29,6 +29,7 @@ timing-shield = { git = "https://github.com/ndokmai/rust-timing-shield.git", opt
 
 [dev-dependencies]
 criterion = "0.3"
+pipe = { version = "0.3", features = ["bidirectional"] }
 
 [[bench]]
 name = "impute"
@@ -41,6 +42,10 @@ path = "app/test_run.rs"
 [[bin]]
 name = "ref_panel_feed"
 path = "app/ref_panel_feed.rs"
+
+[[bin]]
+name = "input_feed"
+path = "app/input_feed.rs"
 
 [[bin]]
 name = "cache_server"

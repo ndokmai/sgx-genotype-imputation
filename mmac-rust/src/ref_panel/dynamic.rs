@@ -15,11 +15,7 @@ pub struct RefPanelWriter {
 }
 
 impl RefPanelWriter {
-    /// integers to large genomic windows which are
-    /// imputed independently
-    /// TODO: chunk_id is currently ignored
-    /// and the entire toy data is loaded
-    pub fn new(_chunk_id: usize, ref_panel_path: &Path) -> Self {
+    pub fn new(ref_panel_path: &Path) -> Self {
         let f = File::open(ref_panel_path).expect("Unable to open reference file");
         let f = BufReader::new(f);
 

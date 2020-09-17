@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use std::path::Path;
+use std::thread::spawn;
 
 const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf";
 const INPUT_IND_FILE: &'static str = "test_data/small_input_ind.txt";
@@ -31,19 +32,34 @@ fn load_ref_output() -> Vec<f32> {
 fn integration_test() {
     let port: u16 = 9999;
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
-    std::thread::spawn(move || {
+    spawn(move || {
         TcpCacheBackend::remote_proc(port, OffloadCache::new(50, FileCacheBackend));
     });
 
-    let chunk_id = 0;
     let ref_panel_path = Path::new(REF_PANEL_FILE);
     let input_ind_path = Path::new(INPUT_IND_FILE);
     let input_dat_path = Path::new(INPUT_DAT_FILE);
-    let ref_panel = OwnedRefPanelWriter::load(chunk_id, &ref_panel_path);
-    let (thap_ind, thap_dat) = OwnedInput::load(&input_ind_path, &input_dat_path).into_pair_iter();
+
+    // ref panel 
+    let (ref_panel_stream1, mut ref_panel_stream2) = pipe::pipe();
+    spawn(move || {
+        let mut ref_panel_writer = RefPanelWriter::new(&ref_panel_path);
+        ref_panel_writer.write(&mut ref_panel_stream2).unwrap();
+    });
+    let ref_panel_reader = RefPanelReader::new(50, ref_panel_stream1).unwrap();
+
+    // input 
+    let (input_stream1, mut input_stream2) = pipe::pipe();
+    spawn(move || {
+        let mut input_writer = InputWriter::new(&input_ind_path, &input_dat_path);
+        input_writer.write(&mut input_stream2).unwrap();
+    });
+
+    let (thap_ind, thap_dat) = InputReader::new(100, input_stream1).into_pair_iter();
     let cache = OffloadCache::new(50, EncryptedCacheBackend::new(TcpCacheBackend::new(addr)));
-    let imputed = impute_chunk(chunk_id, thap_ind, thap_dat, ref_panel.into_reader(), cache);
+    let imputed = impute_all(thap_ind, thap_dat, ref_panel_reader, cache);
     let ref_imputed = load_ref_output();
+
     assert!(imputed
         .into_iter()
         .zip(ref_imputed.into_iter())

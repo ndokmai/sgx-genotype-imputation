@@ -1,37 +1,27 @@
-use mmac::{RefPanel, RefPanelWrite, RefPanelWriter};
+use mmac::*;
 use std::io::BufWriter;
-use std::net::TcpListener;
+use std::net::SocketAddr;
+use std::str::FromStr;
 use std::path::Path;
-use std::time::Instant;
 
 const REF_FILE: &'static str = "test_data/largeref.m3vcf";
 
 fn main() {
-    let chunk_id = 0;
     let ref_panel_path = Path::new(REF_FILE);
 
     eprintln!(
-        "Loading chunk {} from reference panel ({})",
-        chunk_id, REF_FILE
+        "RefPanelFeed: loading from reference panel ({})",
+    REF_FILE
     );
+    let mut ref_panel = RefPanelWriter::new(&ref_panel_path);
 
-    let now = std::time::Instant::now();
-    let mut ref_panel = RefPanelWriter::new(chunk_id, &ref_panel_path);
+    eprintln!("RefPanelFeed: n_blocks = {}", ref_panel.n_blocks());
+    eprintln!("RefPanelFeed: n_haps = {}", ref_panel.n_haps());
+    eprintln!("RefPanelFeed: n_markers = {}", ref_panel.n_markers());
 
-    eprintln!(
-        "Reference panel load time: {} ms",
-        (Instant::now() - now).as_millis()
-    );
-
-    eprintln!("n_blocks = {}", ref_panel.n_blocks());
-    eprintln!("n_haps = {}", ref_panel.n_haps());
-    eprintln!("n_markers = {}", ref_panel.n_markers());
-
-    let stream = TcpListener::bind("localhost:7777")
-        .unwrap()
-        .accept()
-        .unwrap()
-        .0;
+    let stream = tcp_keep_connecting(SocketAddr::from_str("127.0.0.1:7777").unwrap());
+    eprintln!("RefPanelFeed: connected to Main");
 
     ref_panel.write(BufWriter::new(stream)).unwrap();
+    eprintln!("RefPanelFeed: done")
 }
