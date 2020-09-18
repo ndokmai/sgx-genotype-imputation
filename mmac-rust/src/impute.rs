@@ -1,5 +1,6 @@
 use crate::block::Block;
 use crate::cache::*;
+use crate::output::OutputWrite;
 use crate::ref_panel::RefPanelRead;
 use crate::symbol::Symbol;
 use crate::{Input, Real};
@@ -36,7 +37,8 @@ pub fn impute_all(
     mut thap_dat: impl Iterator<Item = Input>,
     mut ref_panel: impl RefPanelRead,
     mut cache: impl Cache,
-) -> Vec<Real> {
+    mut output_writer: impl OutputWrite<Real>,
+) {
     let m = ref_panel.n_haps();
     let m_real: Real = u16::try_from(m).unwrap().into();
     let n_blocks = ref_panel.n_blocks();
@@ -162,8 +164,6 @@ pub fn impute_all(
     let mut fwdprob_first_cache = fwdprob_first_cache.into_load();
     let mut fwdprob_all_cache = fwdprob_all_cache.into_load();
 
-    let mut output = Vec::new();
-
     // Backward pass
     let mut sprob_all = Array1::<Real>::ones(m);
     for b in (0..n_blocks).rev() {
@@ -207,7 +207,7 @@ pub fn impute_all(
             let rec = block.rprob[j - 1];
             //let varind = thap_ind.len() - (var_offset + (block.nvar - j));
 
-            output.push(impute(
+            output_writer.push(impute(
                 jprob.view(),
                 block.clustsize.view(),
                 block.rhap[j].as_bitslice(),
@@ -245,7 +245,7 @@ pub fn impute_all(
 
             // Impute very first position (edge case)
             if b == 0 && j == 1 {
-                output.push(impute(
+                output_writer.push(impute(
                     jprob.view(),
                     block.clustsize.view(),
                     block.rhap[0].as_bitslice(),
@@ -271,7 +271,6 @@ pub fn impute_all(
             );
         }
     }
-    output.into_iter().rev().collect()
 }
 
 fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real> {

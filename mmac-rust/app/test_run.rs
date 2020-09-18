@@ -32,7 +32,6 @@ fn main() {
         .spawn()
         .unwrap();
 
-
     eprintln!("Main: spawn cache_server");
     let mut cache_server = Command::new("cargo")
         .arg("+nightly")
@@ -42,7 +41,6 @@ fn main() {
         .args(&args[..])
         .spawn()
         .unwrap();
-
 
     eprintln!("Main: spawn input_feed");
 
@@ -88,7 +86,17 @@ fn main() {
 
     let now = std::time::Instant::now();
 
-    let imputed = impute_all(thap_ind, thap_dat, ref_panel_reader, cache);
+    let mut output_writer = OwnedOutputWriter::new();
+
+    impute_all(
+        thap_ind,
+        thap_dat,
+        ref_panel_reader,
+        cache,
+        &mut output_writer,
+    );
+
+    let imputed = output_writer.into_reader().collect::<Vec<_>>();
 
     eprintln!(
         "Main: imputation time: {} ms",

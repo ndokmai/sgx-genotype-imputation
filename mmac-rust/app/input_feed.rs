@@ -1,7 +1,7 @@
 use mmac::*;
 use std::net::SocketAddr;
-use std::str::FromStr;
 use std::path::Path;
+use std::str::FromStr;
 const INPUT_IND_FILE: &'static str = "input_ind.txt";
 const INPUT_DAT_FILE: &'static str = "input_dat.txt";
 

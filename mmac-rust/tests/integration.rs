@@ -40,7 +40,7 @@ fn integration_test() {
     let input_ind_path = Path::new(INPUT_IND_FILE);
     let input_dat_path = Path::new(INPUT_DAT_FILE);
 
-    // ref panel 
+    // ref panel
     let (ref_panel_stream1, mut ref_panel_stream2) = pipe::pipe();
     spawn(move || {
         let mut ref_panel_writer = RefPanelWriter::new(&ref_panel_path);
@@ -48,7 +48,7 @@ fn integration_test() {
     });
     let ref_panel_reader = RefPanelReader::new(50, ref_panel_stream1).unwrap();
 
-    // input 
+    // input
     let (input_stream1, mut input_stream2) = pipe::pipe();
     spawn(move || {
         let mut input_writer = InputWriter::new(&input_ind_path, &input_dat_path);
@@ -57,7 +57,15 @@ fn integration_test() {
 
     let (thap_ind, thap_dat) = InputReader::new(100, input_stream1).into_pair_iter();
     let cache = OffloadCache::new(50, EncryptedCacheBackend::new(TcpCacheBackend::new(addr)));
-    let imputed = impute_all(thap_ind, thap_dat, ref_panel_reader, cache);
+    let mut output_writer = OwnedOutputWriter::new();
+    impute_all(
+        thap_ind,
+        thap_dat,
+        ref_panel_reader,
+        cache,
+        &mut output_writer,
+    );
+    let imputed = output_writer.into_reader().collect::<Vec<_>>();
     let ref_imputed = load_ref_output();
 
     assert!(imputed

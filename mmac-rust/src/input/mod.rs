@@ -46,7 +46,7 @@ pub fn write_input(
             data_buffer.push(data_iter.next().unwrap());
         }
         writer.write_u64::<NetworkEndian>(v)?;
-        debug_assert_eq!(data_buffer.as_slice().len(), (n_ones as usize+3)/4);
+        debug_assert_eq!(data_buffer.as_slice().len(), (n_ones as usize + 3) / 4);
         for &v in data_buffer.as_slice() {
             writer.write_u8(v)?;
         }

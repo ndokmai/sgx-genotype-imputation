@@ -1,18 +1,15 @@
 use mmac::*;
 use std::io::BufWriter;
 use std::net::SocketAddr;
-use std::str::FromStr;
 use std::path::Path;
+use std::str::FromStr;
 
 const REF_FILE: &'static str = "test_data/largeref.m3vcf";
 
 fn main() {
     let ref_panel_path = Path::new(REF_FILE);
 
-    eprintln!(
-        "RefPanelFeed: loading from reference panel ({})",
-    REF_FILE
-    );
+    eprintln!("RefPanelFeed: loading from reference panel ({})", REF_FILE);
     let mut ref_panel = RefPanelWriter::new(&ref_panel_path);
 
     eprintln!("RefPanelFeed: n_blocks = {}", ref_panel.n_blocks());

@@ -22,10 +22,12 @@ impl InputWriter {
 
 struct IndexBlockIter<I>(I);
 
-impl<I> Iterator for IndexBlockIter <I>
-where I: Iterator<Item = bool> {
+impl<I> Iterator for IndexBlockIter<I>
+where
+    I: Iterator<Item = bool>,
+{
     type Item = u64;
-    fn next(&mut self) -> Option<Self::Item> { 
+    fn next(&mut self) -> Option<Self::Item> {
         let mut ind_buffer = BitVec::<Lsb0, u64>::with_capacity(64);
         for _ in 0..64 {
             match self.0.next() {

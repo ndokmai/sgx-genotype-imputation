@@ -81,12 +81,12 @@ impl<T: BitStore> SymbolVec<T> {
     }
 
     pub fn with_capacity(capacity: usize) -> Self {
-        Self(BitVec::with_capacity(capacity*2))
+        Self(BitVec::with_capacity(capacity * 2))
     }
 
     pub fn shrink_to(&mut self, new_len: usize) {
         assert!(new_len <= self.0.len());
-        self.0.resize(new_len*2, false);
+        self.0.resize(new_len * 2, false);
     }
 
     pub fn shrink_to_fit(&mut self) {
@@ -98,7 +98,6 @@ impl<T: BitStore> SymbolVec<T> {
         self.0.push(first);
         self.0.push(second);
     }
-
 
     pub fn iter<'a>(&'a self) -> Iter<'a, T> {
         Iter(self.0.as_bitslice().iter())
@@ -115,7 +114,6 @@ impl<T: BitStore> SymbolVec<T> {
     pub fn as_bitslice(&self) -> &BitSlice<Lsb0, T> {
         self.0.as_bitslice()
     }
-
 }
 
 impl<T: BitStore> From<BitVec<Lsb0, T>> for SymbolVec<T> {
@@ -159,9 +157,7 @@ impl<T: BitStore> std::iter::FromIterator<i8> for SymbolVec<T> {
     where
         I: IntoIterator<Item = i8>,
     {
-        iter.into_iter()
-            .map(|s| Into::<Symbol>::into(s))
-            .collect()
+        iter.into_iter().map(|s| Into::<Symbol>::into(s)).collect()
     }
 }
 
@@ -176,6 +172,7 @@ impl<T: BitStore> std::iter::FromIterator<Symbol> for SymbolVec<T> {
     }
 }
 
+// TODO make this more efficient
 impl<T: BitStore> std::iter::FromIterator<(bool, bool)> for SymbolVec<T> {
     fn from_iter<I>(iter: I) -> Self
     where
@@ -210,5 +207,5 @@ mod tests {
         let symbol_vec: SymbolVec<u8> = reference.iter().cloned().collect();
         let result = symbol_vec.into_iter().map(|v| v as i8).collect::<Vec<_>>();
         assert_eq!(reference, result);
-    } 
+    }
 }
