@@ -8,8 +8,7 @@ const REF_FILE: &'static str = "test_data/largeref.m3vcf";
 
 fn main() {
     eprintln!("Host: loading from reference panel ({})", REF_FILE);
-    let ref_panel_path = Path::new(REF_FILE);
-    let mut ref_panel = RefPanelWriter::new(&ref_panel_path);
+    let mut ref_panel = RefPanelWriter::new(&Path::new(&REF_FILE));
 
     eprintln!("Host: n_blocks = {}", ref_panel.n_blocks());
     eprintln!("Host: n_haps = {}", ref_panel.n_haps());

@@ -3,6 +3,7 @@ name = "minimac"
 version = "0.1.0"
 authors = ["Ko Dokmai <natnatee.dokmai@gmail.com>","Hoon Cho <hcho06@gmail.com>"]
 edition = "2018"
+default-run = "test_run"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -37,12 +38,16 @@ name = "impute"
 harness = false
 
 [[bin]]
+name = "test_run"
+path = "app/test_run.rs"
+
+[[bin]]
 name = "host"
 path = "app/host.rs"
 
 [[bin]]
 name = "server"
-path = "app/server.rs"
+path = "../server/src/main.rs"
 
 [[bin]]
 name = "client"

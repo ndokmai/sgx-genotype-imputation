@@ -16,9 +16,6 @@ fn main() {
         INPUT_IND_FILE, INPUT_DAT_FILE
     );
 
-    let input_ind_path = Path::new(INPUT_IND_FILE);
-    let input_dat_path = Path::new(INPUT_DAT_FILE);
-
     let mut stream = BufStream::new(tcp_keep_connecting(
         SocketAddr::from_str("127.0.0.1:7778").unwrap(),
     ));
@@ -29,7 +26,11 @@ fn main() {
 
     let n_ind = 97020;
 
-    let mut input_writer = InputWriter::new(n_ind, &input_ind_path, &input_dat_path);
+    let mut input_writer = InputWriter::new(
+        n_ind,
+        &Path::new(INPUT_IND_FILE),
+        &Path::new(INPUT_DAT_FILE),
+    );
     input_writer.write(&mut stream).unwrap();
     stream.flush().unwrap();
 
