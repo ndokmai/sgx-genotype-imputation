@@ -5,9 +5,10 @@ pub use owned::*;
 
 use crate::symbol::{Symbol, SymbolVec};
 use crate::Input;
-use byteorder::{NetworkEndian, WriteBytesExt};
+use bitvec::prelude::{BitVec, Lsb0};
+use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Result, Write};
+use std::io::{BufRead, BufReader, Error, ErrorKind, Read, Result, Write};
 use std::path::Path;
 
 pub trait InputWrite {
@@ -54,4 +55,31 @@ pub fn write_input(
         }
     }
     Ok(())
+}
+
+pub fn read_next_input(
+    n_ind_left: &mut usize,
+    mut reader: impl Read,
+) -> Result<(BitVec<Lsb0, u64>, SymbolVec<u8>)> {
+    if *n_ind_left == 0 {
+        return Err(Error::new(ErrorKind::Other, "No more indices to read"));
+    }
+    let ind_block = reader.read_u64::<NetworkEndian>()?;
+    let n_ones = ind_block.count_ones() as usize;
+    let n_bytes = (n_ones + 3) / 4;
+    let mut ind_buffer = BitVec::<Lsb0, u64>::from_vec(vec![ind_block]);
+    if *n_ind_left >= 64 {
+        ind_buffer.resize(64, false);
+    } else {
+        ind_buffer.resize(*n_ind_left, false);
+    }
+    let mut symbols: SymbolVec<u8> = BitVec::from_vec(
+        (0..n_bytes)
+            .map(|_| reader.read_u8().unwrap())
+            .collect::<Vec<_>>(),
+    )
+    .into();
+    symbols.shrink_to(n_ones);
+    *n_ind_left -= ind_buffer.len();
+    Ok((ind_buffer, symbols))
 }

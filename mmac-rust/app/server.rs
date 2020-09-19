@@ -1,3 +1,4 @@
+use bufstream::BufStream;
 use mmac::*;
 use std::io::BufReader;
 use std::net::{SocketAddr, TcpListener};
@@ -6,10 +7,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 fn main() {
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(7)
-        .build_global()
-        .unwrap();
+    //rayon::ThreadPoolBuilder::new()
+        //.num_threads(7)
+        //.build_global()
+        //.unwrap();
 
     let (host_stream, host_socket) = TcpListener::bind("localhost:7777")
         .unwrap()
@@ -30,26 +31,37 @@ fn main() {
         client_socket
     );
 
-    let client_stream = Arc::new(Mutex::new(client_stream));
+    let client_stream = Arc::new(Mutex::new(BufStream::new(client_stream)));
 
-    let (thap_ind, thap_dat) = InputReader::new(1000, client_stream.clone()).into_pair_iter();
+    let (thap_ind, thap_dat) = InputReader::new(client_stream.clone()).into_pair_iter();
+
+    //use std::path::Path;
+    //const INPUT_IND_FILE: &'static str = "input_ind.txt";
+    //const INPUT_DAT_FILE: &'static str = "input_dat.txt";
+    //let input_ind_path = Path::new(INPUT_IND_FILE);
+    //let input_dat_path = Path::new(INPUT_DAT_FILE);
+    //let (thap_ind, thap_dat) = OwnedInput::load(&input_ind_path, &input_ind_path).into_pair_iter();
 
     let cache = OffloadCache::new(
         50,
         EncryptedCacheBackend::new(TcpCacheBackend::new(
             SocketAddr::from_str("127.0.0.1:8888").unwrap(),
+            50,
         )),
     );
+
+    //let cache = LocalCache;
 
     eprintln!("Server: connected to CacheServer");
 
     eprintln!("Server: begin imputation");
 
-    let now = std::time::Instant::now();
-
     let mut output_writer =
-        MutexStreamOutputWriter::new(ref_panel_reader.n_markers(), client_stream);
+        LazyStreamOutputWriter::new(ref_panel_reader.n_markers(), client_stream);
 
+    //let mut output_writer = OwnedOutputWriter::new();
+
+    let now = std::time::Instant::now();
     impute_all(
         thap_ind,
         thap_dat,

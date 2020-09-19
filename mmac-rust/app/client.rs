@@ -1,3 +1,4 @@
+use bufstream::BufStream;
 use mmac::*;
 use std::fs::File;
 use std::io::Write;
@@ -18,7 +19,9 @@ fn main() {
     let input_ind_path = Path::new(INPUT_IND_FILE);
     let input_dat_path = Path::new(INPUT_DAT_FILE);
 
-    let mut stream = tcp_keep_connecting(SocketAddr::from_str("127.0.0.1:7778").unwrap());
+    let mut stream = BufStream::new(tcp_keep_connecting(
+        SocketAddr::from_str("127.0.0.1:7778").unwrap(),
+    ));
 
     eprintln!("Client: connected to Server");
 
@@ -28,6 +31,7 @@ fn main() {
 
     let mut input_writer = InputWriter::new(n_ind, &input_ind_path, &input_dat_path);
     input_writer.write(&mut stream).unwrap();
+    stream.flush().unwrap();
 
     let imputed = StreamOutputReader::read(stream).collect::<Vec<Real>>();
 

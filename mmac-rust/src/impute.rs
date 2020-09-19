@@ -167,6 +167,7 @@ pub fn impute_all(
     let mut fwdprob_norecom_cache = fwdprob_norecom_cache.into_load();
     let mut fwdprob_first_cache = fwdprob_first_cache.into_load();
     let mut fwdprob_all_cache = fwdprob_all_cache.into_load();
+
     // Backward pass
     let mut sprob_all = Array1::<Real>::ones(m);
     for b in (0..n_blocks).rev() {

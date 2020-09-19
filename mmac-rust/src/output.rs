@@ -111,34 +111,37 @@ impl<R, T> Iterator for StreamOutputReader<R, T> {
 
 impl<T, R> OutputRead<T> for StreamOutputReader<R, T> where T: for<'de> serde::Deserialize<'de> {}
 
-pub struct MutexStreamOutputWriter<W> {
-    n_outputs: Option<usize>,
-    writer: Arc<Mutex<W>>,
+pub struct LazyStreamOutputWriter<W> {
+    n_outputs: usize,
+    writer: Option<Arc<Mutex<W>>>,
+    inner: Option<StreamOutputWriter<W>>,
 }
 
-impl<W: Write> MutexStreamOutputWriter<W> {
+impl<W: Write> LazyStreamOutputWriter<W> {
     pub fn new(n_outputs: usize, writer: Arc<Mutex<W>>) -> Self {
         Self {
-            n_outputs: Some(n_outputs),
-            writer,
+            n_outputs,
+            writer: Some(writer),
+            inner: None,
         }
     }
 }
 
-impl<W, T> OutputWrite<T> for MutexStreamOutputWriter<W>
+impl<W, T> OutputWrite<T> for LazyStreamOutputWriter<W>
 where
     W: Write,
     T: serde::Serialize,
 {
     fn push(&mut self, v: T) {
-        //println!("count = {}", Arc::strong_count(&self.0));
-        //println!("lockable = {}", self.0.try_lock().is_ok());
-        let mut stream = self.writer.lock().unwrap();
-        if self.n_outputs.is_some() {
-            stream
-                .write_u32::<NetworkEndian>(self.n_outputs.take().unwrap() as u32)
-                .unwrap();
+        if self.inner.is_none() {
+            //println!("count = {}", Arc::strong_count(self.writer.as_ref().unwrap()));
+            //println!("lockable = {}", writer.try_lock().is_ok());
+            let writer = self.writer.take().unwrap();
+            while Arc::strong_count(&writer) > 1 {}
+            let writer = Arc::try_unwrap(writer).ok().unwrap().into_inner().unwrap();
+
+            self.inner = Some(StreamOutputWriter::new(self.n_outputs, writer));
         }
-        bincode::serialize_into(&mut *stream, &v).unwrap();
+        self.inner.as_mut().unwrap().push(v);
     }
 }

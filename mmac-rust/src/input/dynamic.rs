@@ -1,10 +1,9 @@
 use super::*;
 use bitvec::prelude::{BitVec, Lsb0};
 use byteorder::{NetworkEndian, ReadBytesExt};
-use crossbeam::{bounded, Sender};
+use crossbeam::{unbounded, Receiver, Sender};
 use std::io::{Read, Result};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub struct InputWriter {
@@ -50,74 +49,13 @@ impl InputWrite for InputWriter {
 
 pub struct InputReader<R> {
     n_ind: usize,
-    bound: usize,
     reader: Arc<Mutex<R>>,
 }
 
 impl<R: Read + Send + 'static> InputReader<R> {
-    pub fn new(bound: usize, reader: Arc<Mutex<R>>) -> Self {
+    pub fn new(reader: Arc<Mutex<R>>) -> Self {
         let n_ind = reader.lock().unwrap().read_u32::<NetworkEndian>().unwrap() as usize;
-        Self {
-            n_ind,
-            bound,
-            reader,
-        }
-    }
-
-    pub fn fill_buffer(
-        n_ind_left: Arc<AtomicUsize>,
-        send_ind: Sender<bool>,
-        send_data: Sender<Input>,
-        reader: Arc<Mutex<R>>,
-    ) {
-        if n_ind_left.load(Ordering::Relaxed) == 0 {
-            return;
-        }
-        if send_ind.is_full() || send_data.is_full() {
-            return;
-        }
-        if reader.try_lock().is_err() {
-            return;
-        }
-        rayon::spawn(move || {
-            if let Ok(mut reader) = reader.try_lock() {
-                if let Ok(ind_block) = reader.read_u64::<NetworkEndian>() {
-                    let n_ones = ind_block.count_ones() as usize;
-                    let n_bytes = (n_ones + 3) / 4;
-                    let mut ind_buffer = BitVec::<Lsb0, u64>::from_vec(vec![ind_block]);
-                    ind_buffer.resize(64, false);
-                    let mut symbols: SymbolVec<u8> = BitVec::from_vec(
-                        (0..n_bytes)
-                            .map(|_| reader.read_u8().unwrap())
-                            .collect::<Vec<_>>(),
-                    )
-                    .into();
-                    symbols.shrink_to(n_ones);
-                    for symbol in symbols.into_iter() {
-                        #[cfg(not(feature = "leak-resistant"))]
-                        let status = send_data.send(symbol);
-
-                        #[cfg(feature = "leak-resistant")]
-                        let status = send_data.send(Input::protect(symbol.into()));
-
-                        if status.is_err() {
-                            break;
-                        }
-                    }
-                    let mut n_ind_left_dec = n_ind_left.load(Ordering::Relaxed);
-                    for b in ind_buffer.into_iter() {
-                        if send_ind.send(b).is_err() {
-                            break;
-                        }
-                        n_ind_left_dec -= 1;
-                        if n_ind_left_dec == 0 {
-                            break;
-                        }
-                    }
-                    n_ind_left.store(n_ind_left_dec, Ordering::Relaxed);
-                }
-            }
-        });
+        Self { n_ind, reader }
     }
 }
 
@@ -125,37 +63,63 @@ impl<R: Read + Send + 'static> InputRead for InputReader<R> {
     type IndexIterator = impl Iterator<Item = bool>;
     type DataIterator = impl Iterator<Item = Input>;
     fn into_pair_iter(self) -> (Self::IndexIterator, Self::DataIterator) {
-        let (send_ind, recv_ind) = bounded(self.bound);
-        let (send_data, recv_data) = bounded(self.bound);
-
-        let n_ind_left = Arc::new(AtomicUsize::new(self.n_ind));
-
-        Self::fill_buffer(
-            n_ind_left.clone(),
-            send_ind.clone(),
-            send_data.clone(),
-            self.reader.clone(),
-        );
-
-        let ind_iter = (0..)
-            .map(move |_| {
-                Self::fill_buffer(
-                    n_ind_left.clone(),
-                    send_ind.clone(),
-                    send_data.clone(),
-                    self.reader.clone(),
-                );
-                recv_ind.recv()
-            })
-            .take_while(|v| v.is_ok())
-            .map(|v| v.unwrap());
-
+        let (sender, receiver) = unbounded();
+        let mut n_ind_left = self.n_ind;
+        let (inds, symbols) =
+            super::read_next_input(&mut n_ind_left, &mut *self.reader.lock().unwrap()).unwrap();
         (
-            ind_iter,
-            (0..)
-                .map(move |_| recv_data.recv())
-                .take_while(|v| v.is_ok())
-                .map(|v| v.unwrap()),
+            IndexIter {
+                buffer: inds.into_iter(),
+                reader: self.reader,
+                n_ind_left,
+                sender,
+            },
+            DataIter {
+                buffer: symbols.into_iter(),
+                receiver,
+            },
         )
+    }
+}
+
+pub struct IndexIter<R> {
+    buffer: bitvec::vec::IntoIter<Lsb0, u64>,
+    reader: Arc<Mutex<R>>,
+    n_ind_left: usize,
+    sender: Sender<SymbolVec<u8>>,
+}
+
+impl<R: Read> Iterator for IndexIter<R> {
+    type Item = bool;
+    fn next(&mut self) -> Option<bool> {
+        match self.buffer.next() {
+            Some(b) => Some(b),
+            None => {
+                let (inds, symbols) =
+                    super::read_next_input(&mut self.n_ind_left, &mut *self.reader.lock().unwrap())
+                        .ok()?;
+                self.buffer = inds.into_iter();
+                self.sender.send(symbols).unwrap();
+                self.next()
+            }
+        }
+    }
+}
+
+pub struct DataIter {
+    buffer: crate::symbol::IntoIter<u8>,
+    receiver: Receiver<SymbolVec<u8>>,
+}
+
+impl Iterator for DataIter {
+    type Item = Symbol;
+    fn next(&mut self) -> Option<Symbol> {
+        match self.buffer.next() {
+            Some(symbol) => Some(symbol),
+            None => {
+                self.buffer = self.receiver.recv().ok()?.into_iter();
+                self.next()
+            }
+        }
     }
 }

@@ -7,14 +7,15 @@ use byteorder::{ReadBytesExt, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 use std::io::{Error, ErrorKind, Result, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::sync::mpsc::{sync_channel, Receiver};
-use std::thread::spawn;
 
-pub struct TcpCacheBackend(SocketAddr);
+pub struct TcpCacheBackend {
+    addr: SocketAddr,
+    capacity: usize,
+}
 
 impl TcpCacheBackend {
-    pub fn new(addr: SocketAddr) -> Self {
-        Self(addr)
+    pub fn new(addr: SocketAddr, capacity: usize) -> Self {
+        Self { addr, capacity }
     }
 
     pub fn remote_proc<B>(port: u16, mut cache_backend: B)
@@ -26,7 +27,7 @@ impl TcpCacheBackend {
         for stream in listener.incoming() {
             let mut stream = BufStream::new(stream.unwrap());
             let mut cache_save = cache_backend.new_save();
-            spawn(move || {
+            std::thread::spawn(move || {
                 loop {
                     let cmd: Cmd = stream.read_u8().unwrap().into();
                     match cmd {
@@ -53,45 +54,41 @@ impl TcpCacheBackend {
 impl CacheBackend for TcpCacheBackend {
     type WriteBackend = TcpCacheWriteBackend;
     fn new_write(&mut self) -> Self::WriteBackend {
-        TcpCacheWriteBackend(BufStream::new(tcp_keep_connecting(self.0)))
+        TcpCacheWriteBackend {
+            stream: BufStream::new(tcp_keep_connecting(self.addr)),
+            capacity: self.capacity,
+        }
     }
 }
 
-pub struct TcpCacheWriteBackend(BufStream<TcpStream>);
+pub struct TcpCacheWriteBackend {
+    stream: BufStream<TcpStream>,
+    capacity: usize,
+}
 
 impl CacheWriteBackend for TcpCacheWriteBackend {
     type ReadBackend = TcpCacheReadBackend;
     fn into_read(mut self) -> Self::ReadBackend {
-        self.0.write_u8(Cmd::Pop.into()).unwrap();
-        self.0.flush().unwrap();
+        self.stream.write_u8(Cmd::Pop.into()).unwrap();
+        self.stream.flush().unwrap();
 
-        let (s, r) = sync_channel(20);
-
-        spawn(move || {
-            let mut stream = self.0;
-            loop {
-                if let Ok(buffer) = bincode::deserialize_from(&mut stream) {
-                    s.send(buffer).unwrap();
-                } else {
-                    break;
-                }
-            }
-        });
-        TcpCacheReadBackend(r)
+        TcpCacheReadBackend(self.stream)
     }
 
     fn push_cache_item<T: Serialize>(&mut self, v: &T) -> Result<()> {
-        self.0.write_u8(Cmd::Push.into())?;
+        self.stream.write_u8(Cmd::Push.into())?;
         let buffer = bincode::serialize(v).unwrap();
-        bincode::serialize_into(&mut self.0, &buffer).map_err(|e| Error::new(ErrorKind::Other, e))
+        bincode::serialize_into(&mut self.stream, &buffer)
+            .map_err(|e| Error::new(ErrorKind::Other, e))
     }
 }
 
-pub struct TcpCacheReadBackend(Receiver<Vec<u8>>);
+pub struct TcpCacheReadBackend(BufStream<TcpStream>);
 
 impl CacheReadBackend for TcpCacheReadBackend {
     fn pop_cache_item<T: for<'de> Deserialize<'de>>(&mut self) -> Result<T> {
-        let buffer = self.0.recv().map_err(|e| Error::new(ErrorKind::Other, e))?;
+        let buffer: Vec<u8> =
+            bincode::deserialize_from(&mut self.0).map_err(|e| Error::new(ErrorKind::Other, e))?;
         Ok(bincode::deserialize_from(&buffer[..]).unwrap())
     }
 }
@@ -138,7 +135,7 @@ mod tests {
         for i in 0..5 {
             reference.push(((i * 10)..((i + 1) * 10)).collect::<Vec<u64>>());
         }
-        let mut cache = TcpCacheBackend(addr);
+        let mut cache = TcpCacheBackend::new(addr, 3);
         let mut file = cache.new_write();
         for v in &reference {
             file.push_cache_item(v).unwrap();
