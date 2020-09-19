@@ -31,7 +31,7 @@ impl From<(bool, bool)> for Symbol {
     fn from(bits: (bool, bool)) -> Self {
         match bits {
             (true, false) => Self::Ref,
-            (true, true) => Self::Alt,
+            (false, true) => Self::Alt,
             (false, false) => Self::Missing,
             _ => panic!("Invalid symbol"),
         }
@@ -42,9 +42,26 @@ impl Into<(bool, bool)> for Symbol {
     fn into(self) -> (bool, bool) {
         match self {
             Self::Ref => (true, false),
-            Self::Alt => (true, true),
+            Self::Alt => (false, true),
             Self::Missing => (false, false),
         }
+    }
+}
+
+impl From<u8> for Symbol {
+    fn from(code: u8) -> Self {
+        match code & 0b11 {
+            0 => Self::Missing,
+            1 => Self::Ref,
+            2 => Self::Alt,
+            _ => panic!("Invalid symbol"),
+        }
+    }
+}
+
+impl Into<u8> for Symbol {
+    fn into(self) -> u8 {
+        (self as i8 + 1) as u8
     }
 }
 

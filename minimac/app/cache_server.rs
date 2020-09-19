@@ -1,4 +1,4 @@
-use mmac::*;
+use minimac::*;
 
 const PORT: u16 = 8888;
 

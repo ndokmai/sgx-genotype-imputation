@@ -8,7 +8,15 @@ python3 gen_input.py template.txt input
 
 This produces input.txt (for rust) and input.vcf (for minimac). Then run:
 ```bash
-time cargo +nightly run --release --bin test_run
+cargo +nightly run --release --bin cache_server & 
+cargo +nightly run --release --bin host & 
+cargo +nightly run --release --bin server & 
+cargo +nightly run --release --bin client 
+```
+
+As soon as the programs finishe, run
+```bash
+killall cache_server
 ```
 
 This writes imputed results to output.txt. Expected results from

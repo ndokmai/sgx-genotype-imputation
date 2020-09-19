@@ -1,5 +1,5 @@
 use bufstream::BufStream;
-use mmac::*;
+use minimac::*;
 use std::fs::File;
 use std::io::Write;
 use std::net::SocketAddr;

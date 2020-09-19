@@ -2,12 +2,10 @@
 ## Test
 To test in enclave mode,
 ```bash
-./test.sh <reference_panels_file> <input_file>
+./test.sh
 ```
 
 To test in simulation mode,
 ```bash
-./test_simulation.sh <reference_panels_file> <input_file>
+./test_simulation.sh
 ```
-## Note
-The original code is preserved in branch `legacy` for reference.

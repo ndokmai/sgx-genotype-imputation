@@ -1,4 +1,4 @@
-use mmac::*;
+use minimac::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;

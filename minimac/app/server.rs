@@ -1,5 +1,5 @@
 use bufstream::BufStream;
-use mmac::*;
+use minimac::*;
 use std::io::BufReader;
 use std::net::{SocketAddr, TcpListener};
 use std::str::FromStr;
@@ -7,11 +7,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 fn main() {
-    //rayon::ThreadPoolBuilder::new()
-        //.num_threads(7)
-        //.build_global()
-        //.unwrap();
-
     let (host_stream, host_socket) = TcpListener::bind("localhost:7777")
         .unwrap()
         .accept()

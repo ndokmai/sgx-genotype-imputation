@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use mmac::*;
+use minimac::*;
 use std::path::Path;
 
 const REF_PANEL_FILE: &'static str = "test_data/largeref.m3vcf";

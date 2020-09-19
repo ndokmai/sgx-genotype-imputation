@@ -112,10 +112,18 @@ pub struct DataIter {
 }
 
 impl Iterator for DataIter {
-    type Item = Symbol;
-    fn next(&mut self) -> Option<Symbol> {
+    type Item = Input;
+    fn next(&mut self) -> Option<Input> {
         match self.buffer.next() {
-            Some(symbol) => Some(symbol),
+            Some(symbol) => {
+                #[cfg(not(feature = "leak-resistant"))]
+                {
+                    Some(symbol)
+                }
+
+                #[cfg(feature = "leak-resistant")]
+                Some(Input::protect(symbol.into()))
+            }
             None => {
                 self.buffer = self.receiver.recv().ok()?.into_iter();
                 self.next()

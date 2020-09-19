@@ -1,12 +1,18 @@
-REF=$1
-INPUT=$2
-TARGET=app/target/x86_64-fortanix-unknown-sgx/release/app
+export RUSTFLAGS="-Ctarget-cpu=native -Ctarget-feature=+aes,+avx,+avx2,+sse2,+sse4.1,+ssse3"
 
-(cd app && cargo build --release --target x86_64-fortanix-unknown-sgx ) && \
-    ftxsgx-elf2sgxs $TARGET --heap-size 0x20000000 --stack-size 0x20000 --threads 8 --debug && \
-(cd runner && cargo build --release) && \
-    (cd client && cargo build --release) && \
-(cd runner && cargo run --release -- ../${TARGET}.sgxs ../${REF}) &
-(cd client && cargo run --release -- ../${INPUT})
+(cd minimac && cargo build --release --features leak-resistant)
+(cd server && cargo build --release --target x86_64-fortanix-unknown-sgx)
 
+cd minimac
+cargo run -q --release --features leak-resistant --bin cache_server &
+cargo run -q --release --features leak-resistant --bin host &
+cd ..
 
+cd server
+cargo run -q --release --target x86_64-fortanix-unknown-sgx &
+cd ..
+
+cd minimac
+cargo run -q --release --features leak-resistant --bin client
+
+killall cache_server
