@@ -30,6 +30,7 @@ impl OwnedInput {
 impl InputWrite for OwnedInput {
     fn write(&mut self, writer: impl Write) -> Result<()> {
         super::write_input(
+            self.ind.len(),
             self.ind.as_slice().iter().cloned(),
             self.data.iter(),
             writer,

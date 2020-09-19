@@ -1,6 +1,8 @@
+use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{Read, Write};
 use std::iter::Rev;
 use std::marker::PhantomData;
+use std::sync::{Arc, Mutex};
 
 pub trait OutputWrite<T>
 where
@@ -59,6 +61,13 @@ impl<T> OutputRead<T> for OwnedOutputReader<T> where T: for<'de> serde::Deserial
 
 pub struct StreamOutputWriter<W>(W);
 
+impl<W: Write> StreamOutputWriter<W> {
+    pub fn new(n_outputs: usize, mut writer: W) -> Self {
+        writer.write_u32::<NetworkEndian>(n_outputs as u32).unwrap();
+        Self(writer)
+    }
+}
+
 impl<W, T> OutputWrite<T> for StreamOutputWriter<W>
 where
     W: Write,
@@ -80,13 +89,11 @@ where
     T: for<'de> serde::Deserialize<'de>,
 {
     pub fn read(mut reader: R) -> Self {
+        let n_outputs = reader.read_u32::<NetworkEndian>().unwrap() as usize;
         let mut buffer = Vec::new();
-        loop {
-            if let Ok(v) = bincode::deserialize_from(&mut reader) {
-                buffer.push(v);
-            } else {
-                break;
-            }
+        for _ in 0..n_outputs {
+            let v = bincode::deserialize_from(&mut reader).unwrap();
+            buffer.push(v);
         }
         Self {
             buffer,
@@ -103,3 +110,35 @@ impl<R, T> Iterator for StreamOutputReader<R, T> {
 }
 
 impl<T, R> OutputRead<T> for StreamOutputReader<R, T> where T: for<'de> serde::Deserialize<'de> {}
+
+pub struct MutexStreamOutputWriter<W> {
+    n_outputs: Option<usize>,
+    writer: Arc<Mutex<W>>,
+}
+
+impl<W: Write> MutexStreamOutputWriter<W> {
+    pub fn new(n_outputs: usize, writer: Arc<Mutex<W>>) -> Self {
+        Self {
+            n_outputs: Some(n_outputs),
+            writer,
+        }
+    }
+}
+
+impl<W, T> OutputWrite<T> for MutexStreamOutputWriter<W>
+where
+    W: Write,
+    T: serde::Serialize,
+{
+    fn push(&mut self, v: T) {
+        //println!("count = {}", Arc::strong_count(&self.0));
+        //println!("lockable = {}", self.0.try_lock().is_ok());
+        let mut stream = self.writer.lock().unwrap();
+        if self.n_outputs.is_some() {
+            stream
+                .write_u32::<NetworkEndian>(self.n_outputs.take().unwrap() as u32)
+                .unwrap();
+        }
+        bincode::serialize_into(&mut *stream, &v).unwrap();
+    }
+}

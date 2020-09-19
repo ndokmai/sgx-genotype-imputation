@@ -35,10 +35,12 @@ pub fn load_data(data_path: &Path) -> impl Iterator<Item = Symbol> {
 }
 
 pub fn write_input(
+    n_ind: usize,
     ind_block_iter: impl Iterator<Item = u64>,
     mut data_iter: impl Iterator<Item = Symbol>,
     mut writer: impl Write,
 ) -> Result<()> {
+    writer.write_u32::<NetworkEndian>(n_ind as u32)?;
     for v in ind_block_iter {
         let n_ones = v.count_ones();
         let mut data_buffer = SymbolVec::<u8>::with_capacity(n_ones as usize);

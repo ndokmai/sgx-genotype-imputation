@@ -1,0 +1,67 @@
+use mmac::*;
+use std::io::BufReader;
+use std::net::{SocketAddr, TcpListener};
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
+fn main() {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(7)
+        .build_global()
+        .unwrap();
+
+    let (host_stream, host_socket) = TcpListener::bind("localhost:7777")
+        .unwrap()
+        .accept()
+        .unwrap();
+
+    eprintln!("Server: accepted connection from Host at {:?}", host_socket);
+
+    let ref_panel_reader = RefPanelReader::new(100, BufReader::new(host_stream)).unwrap();
+
+    let (client_stream, client_socket) = TcpListener::bind("localhost:7778")
+        .unwrap()
+        .accept()
+        .unwrap();
+
+    eprintln!(
+        "Server: accepted connection from Client at {:?}",
+        client_socket
+    );
+
+    let client_stream = Arc::new(Mutex::new(client_stream));
+
+    let (thap_ind, thap_dat) = InputReader::new(1000, client_stream.clone()).into_pair_iter();
+
+    let cache = OffloadCache::new(
+        50,
+        EncryptedCacheBackend::new(TcpCacheBackend::new(
+            SocketAddr::from_str("127.0.0.1:8888").unwrap(),
+        )),
+    );
+
+    eprintln!("Server: connected to CacheServer");
+
+    eprintln!("Server: begin imputation");
+
+    let now = std::time::Instant::now();
+
+    let mut output_writer =
+        MutexStreamOutputWriter::new(ref_panel_reader.n_markers(), client_stream);
+
+    impute_all(
+        thap_ind,
+        thap_dat,
+        ref_panel_reader,
+        cache,
+        &mut output_writer,
+    );
+
+    eprintln!(
+        "Server: imputation time = {} ms",
+        (Instant::now() - now).as_millis()
+    );
+
+    eprintln!("Server: done");
+}

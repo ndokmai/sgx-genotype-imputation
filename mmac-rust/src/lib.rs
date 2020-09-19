@@ -40,4 +40,4 @@ mod inner {
     pub type Input = timing_shield::TpI8;
 }
 
-use inner::*;
+pub use inner::*;

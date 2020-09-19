@@ -156,6 +156,10 @@ pub fn impute_all(
         fwdprob_first_cache.push(sprob_first);
     }
 
+    drop(thap_ind);
+    drop(thap_dat);
+    drop(ref_panel);
+
     let mut block_cache = block_cache.into_load();
     let mut thap_ind_block_cache = thap_ind_block_cache.into_load();
     let mut thap_dat_block_cache = thap_dat_block_cache.into_load();
@@ -163,7 +167,6 @@ pub fn impute_all(
     let mut fwdprob_norecom_cache = fwdprob_norecom_cache.into_load();
     let mut fwdprob_first_cache = fwdprob_first_cache.into_load();
     let mut fwdprob_all_cache = fwdprob_all_cache.into_load();
-
     // Backward pass
     let mut sprob_all = Array1::<Real>::ones(m);
     for b in (0..n_blocks).rev() {
@@ -205,8 +208,6 @@ pub fn impute_all(
         // Walk
         for j in (1..block.nvar).rev() {
             let rec = block.rprob[j - 1];
-            //let varind = thap_ind.len() - (var_offset + (block.nvar - j));
-
             output_writer.push(impute(
                 jprob.view(),
                 block.clustsize.view(),
