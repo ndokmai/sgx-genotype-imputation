@@ -46,10 +46,6 @@ name = "host"
 path = "app/host.rs"
 
 [[bin]]
-name = "server"
-path = "../server/src/main.rs"
-
-[[bin]]
 name = "client"
 path = "app/client.rs"
 

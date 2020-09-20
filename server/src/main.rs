@@ -1,4 +1,7 @@
 use bufstream::BufStream;
+#[cfg(feature = "leak-resistant")]
+use minimac_resistant::*;
+#[cfg(not(feature = "leak-resistant"))]
 use minimac::*;
 use std::io::BufReader;
 use std::net::{SocketAddr, TcpListener};

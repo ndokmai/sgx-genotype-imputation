@@ -6,8 +6,13 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["minimac"]
+leak-resistant = ["minimac_resistant"]
+
 [dependencies]
-minimac = { path = "../minimac", features = ["leak-resistant"] }
+minimac = { path = "../minimac", optional = true }
+minimac_resistant = { package = "minimac", path = "../minimac", features = ["leak-resistant"], optional = true }
 bufstream = "0.1"
 
 [package.metadata.fortanix-sgx]
