@@ -1,8 +1,13 @@
 mod encryption;
 mod file;
+#[cfg(all(target_env = "sgx", target_vendor = "fortanix"))]
+mod nonenclave_local;
 mod tcp;
+
 pub use encryption::*;
 pub use file::*;
+#[cfg(all(target_env = "sgx", target_vendor = "fortanix"))]
+pub use nonenclave_local::*;
 pub use tcp::*;
 
 use serde::{Deserialize, Serialize};

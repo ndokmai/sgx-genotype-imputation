@@ -1,8 +1,8 @@
 use bufstream::BufStream;
-#[cfg(feature = "leak-resistant")]
-use minimac_resistant::*;
 #[cfg(not(feature = "leak-resistant"))]
 use minimac::*;
+#[cfg(feature = "leak-resistant")]
+use minimac_resistant::*;
 use std::io::BufReader;
 use std::net::{SocketAddr, TcpListener};
 use std::str::FromStr;
@@ -47,6 +47,8 @@ fn main() {
             100,
         )),
     );
+
+    //let cache = OffloadCache::new(100, EncryptedCacheBackend::new(NonEnclaveLocalCacheBackend));
 
     //let cache = LocalCache;
 
