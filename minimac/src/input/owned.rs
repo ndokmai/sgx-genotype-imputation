@@ -1,5 +1,5 @@
 use super::*;
-use crate::symbol::SymbolVec;
+use crate::symbol_vec::SymbolVec;
 use bitvec::prelude::{BitVec, Lsb0};
 use std::io::{Result, Write};
 use std::path::Path;
@@ -7,7 +7,7 @@ use std::path::Path;
 #[derive(Clone)]
 pub struct OwnedInput {
     ind: BitVec<Lsb0, u64>,
-    data: SymbolVec<u64>,
+    data: SymbolVec,
 }
 
 impl OwnedInput {
@@ -22,7 +22,7 @@ impl OwnedInput {
         super::load_ind(ind_path).collect()
     }
 
-    fn load_data(data_path: &Path) -> SymbolVec<u64> {
+    fn load_data(data_path: &Path) -> SymbolVec {
         super::load_data(data_path).collect()
     }
 }

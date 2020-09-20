@@ -3,6 +3,7 @@ use crate::cache::*;
 use crate::output::OutputWrite;
 use crate::ref_panel::RefPanelRead;
 use crate::symbol::Symbol;
+use crate::symbol_vec::SymbolVec;
 use crate::{Input, Real};
 use bitvec::prelude::{BitSlice, BitVec, Lsb0};
 use lazy_static::lazy_static;
@@ -44,8 +45,7 @@ pub fn impute_all(
     let n_blocks = ref_panel.n_blocks();
 
     let mut block_cache = cache.new_save();
-    let mut thap_ind_block_cache = cache.new_save();
-    let mut thap_dat_block_cache = cache.new_save();
+    let mut thap_block_cache = cache.new_save();
     let mut fwdprob_cache = cache.new_save();
     let mut fwdprob_norecom_cache = cache.new_save();
     let mut fwdprob_first_cache = cache.new_save();
@@ -55,7 +55,7 @@ pub fn impute_all(
 
     // Forward pass
     for b in 0..n_blocks {
-        let mut thap_dat_block = Vec::new();
+        let mut thap_dat_block = SymbolVec::new();
         let mut thap_ind_block = BitVec::<Lsb0, u64>::new();
         let block = if b == 0 {
             // First position emission (edge case)
@@ -69,7 +69,7 @@ pub fn impute_all(
                 thap_dat_block.push(first_dat);
 
                 #[cfg(feature = "leak-resistant")]
-                thap_dat_block.push(first_dat.expose());
+                thap_dat_block.push(first_dat.expose().into());
 
                 first_emission(first_dat, &first_block, sprob_all.view_mut());
             }
@@ -118,7 +118,7 @@ pub fn impute_all(
                         thap_dat_block.push(tsym);
 
                         #[cfg(feature = "leak-resistant")]
-                        thap_dat_block.push(tsym.expose());
+                        thap_dat_block.push(tsym.expose().into());
 
                         later_emission(
                             tsym,
@@ -148,8 +148,7 @@ pub fn impute_all(
         }
         thap_ind_block.shrink_to_fit();
         thap_dat_block.shrink_to_fit();
-        thap_ind_block_cache.push(thap_ind_block);
-        thap_dat_block_cache.push(thap_dat_block);
+        thap_block_cache.push((thap_ind_block, thap_dat_block));
         block_cache.push(block);
         fwdprob_cache.push(fwdprob);
         fwdprob_norecom_cache.push(fwdprob_norecom);
@@ -161,8 +160,7 @@ pub fn impute_all(
     drop(ref_panel);
 
     let mut block_cache = block_cache.into_load();
-    let mut thap_ind_block_cache = thap_ind_block_cache.into_load();
-    let mut thap_dat_block_cache = thap_dat_block_cache.into_load();
+    let mut thap_block_cache = thap_block_cache.into_load();
     let mut fwdprob_cache = fwdprob_cache.into_load();
     let mut fwdprob_norecom_cache = fwdprob_norecom_cache.into_load();
     let mut fwdprob_first_cache = fwdprob_first_cache.into_load();
@@ -172,8 +170,7 @@ pub fn impute_all(
     let mut sprob_all = Array1::<Real>::ones(m);
     for b in (0..n_blocks).rev() {
         let block = block_cache.pop().unwrap();
-        let mut thap_ind_block = thap_ind_block_cache.pop().unwrap();
-        let mut thap_dat_block = thap_dat_block_cache.pop().unwrap();
+        let (mut thap_ind_block, mut thap_dat_block) = thap_block_cache.pop().unwrap();
         let fwdprob = fwdprob_cache.pop().unwrap();
         let fwdprob_norecom = fwdprob_norecom_cache.pop().unwrap();
         let fwdprob_first = fwdprob_first_cache.pop().unwrap();
@@ -226,7 +223,7 @@ pub fn impute_all(
                 let tsym = thap_dat_block.pop().unwrap();
 
                 #[cfg(feature = "leak-resistant")]
-                let tsym = Input::protect(thap_dat_block.pop().unwrap());
+                let tsym = Input::protect(thap_dat_block.pop().unwrap().into());
 
                 later_emission(
                     tsym,

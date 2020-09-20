@@ -11,6 +11,7 @@ pub mod input;
 pub mod output;
 pub mod ref_panel;
 pub mod symbol;
+pub mod symbol_vec;
 pub mod tcp;
 
 #[cfg(feature = "leak-resistant")]

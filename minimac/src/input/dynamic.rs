@@ -86,7 +86,7 @@ pub struct IndexIter<R> {
     buffer: bitvec::vec::IntoIter<Lsb0, u64>,
     reader: Arc<Mutex<R>>,
     n_ind_left: usize,
-    sender: Sender<SymbolVec<u8>>,
+    sender: Sender<SymbolVec>,
 }
 
 impl<R: Read> Iterator for IndexIter<R> {
@@ -107,8 +107,8 @@ impl<R: Read> Iterator for IndexIter<R> {
 }
 
 pub struct DataIter {
-    buffer: crate::symbol::IntoIter<u8>,
-    receiver: Receiver<SymbolVec<u8>>,
+    buffer: crate::symbol_vec::IntoIter,
+    receiver: Receiver<SymbolVec>,
 }
 
 impl Iterator for DataIter {
