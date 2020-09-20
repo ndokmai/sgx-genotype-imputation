@@ -17,7 +17,7 @@ fn main() {
 
     eprintln!("Server: accepted connection from Host at {:?}", host_socket);
 
-    let ref_panel_reader = RefPanelReader::new(100, BufReader::new(host_stream)).unwrap();
+    let ref_panel_reader = RefPanelReader::new(10, BufReader::new(host_stream)).unwrap();
 
     let (client_stream, client_socket) = TcpListener::bind("localhost:7778")
         .unwrap()
@@ -29,16 +29,17 @@ fn main() {
         client_socket
     );
 
-    let client_stream = Arc::new(Mutex::new(BufStream::new(client_stream)));
+    //let client_stream = Arc::new(Mutex::new(BufStream::new(client_stream)));
+    let client_stream = Arc::new(Mutex::new(BufStream::with_capacities(
+        1 << 20,
+        1 << 20,
+        client_stream,
+    )));
 
     let (thap_ind, thap_dat) = InputReader::new(client_stream.clone()).into_pair_iter();
-
-    //use std::path::Path;
-    //const INPUT_IND_FILE: &'static str = "input_ind.txt";
-    //const INPUT_DAT_FILE: &'static str = "input_dat.txt";
-    //let input_ind_path = Path::new(INPUT_IND_FILE);
-    //let input_dat_path = Path::new(INPUT_DAT_FILE);
-    //let (thap_ind, thap_dat) = OwnedInput::load(&input_ind_path, &input_ind_path).into_pair_iter();
+    //let (thap_ind, thap_dat) = OwnedInput::from_remote(&mut *client_stream.lock().unwrap())
+    //.unwrap()
+    //.into_pair_iter();
 
     let cache = OffloadCache::new(
         100,

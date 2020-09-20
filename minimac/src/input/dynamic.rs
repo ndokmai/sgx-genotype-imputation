@@ -24,6 +24,11 @@ impl InputWriter {
 
 impl InputWrite for InputWriter {
     fn write(&mut self, writer: impl Write) -> Result<()> {
+        let mut owned = OwnedInput::load(&self.ind_path, &self.data_path);
+        owned.write(writer)
+    }
+
+    fn stream(&mut self, writer: impl Write) -> Result<()> {
         let mut ind_iter = super::load_ind(&self.ind_path);
         let data_iter = super::load_data(&self.data_path);
         let ind_iter = (0..)
@@ -43,7 +48,7 @@ impl InputWrite for InputWriter {
             })
             .take_while(|v| v.is_some())
             .map(|v| v.unwrap());
-        super::write_input(self.n_ind, ind_iter, data_iter, writer)
+        super::stream_write_input(self.n_ind, ind_iter, data_iter, writer)
     }
 }
 
@@ -66,7 +71,8 @@ impl<R: Read + Send + 'static> InputRead for InputReader<R> {
         let (sender, receiver) = unbounded();
         let mut n_ind_left = self.n_ind;
         let (inds, symbols) =
-            super::read_next_input(&mut n_ind_left, &mut *self.reader.lock().unwrap()).unwrap();
+            super::stream_read_next_input(&mut n_ind_left, &mut *self.reader.lock().unwrap())
+                .unwrap();
         (
             IndexIter {
                 buffer: inds.into_iter(),
@@ -95,9 +101,11 @@ impl<R: Read> Iterator for IndexIter<R> {
         match self.buffer.next() {
             Some(b) => Some(b),
             None => {
-                let (inds, symbols) =
-                    super::read_next_input(&mut self.n_ind_left, &mut *self.reader.lock().unwrap())
-                        .ok()?;
+                let (inds, symbols) = super::stream_read_next_input(
+                    &mut self.n_ind_left,
+                    &mut *self.reader.lock().unwrap(),
+                )
+                .ok()?;
                 self.buffer = inds.into_iter();
                 self.sender.send(symbols).unwrap();
                 self.next()

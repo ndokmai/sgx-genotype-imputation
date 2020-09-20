@@ -13,6 +13,7 @@ use std::io::{BufRead, BufReader, Error, ErrorKind, Read, Result, Write};
 use std::path::Path;
 
 pub trait InputWrite {
+    fn stream(&mut self, writer: impl Write) -> Result<()>;
     fn write(&mut self, writer: impl Write) -> Result<()>;
 }
 
@@ -36,7 +37,7 @@ pub fn load_data(data_path: &Path) -> impl Iterator<Item = Symbol> {
         .map(|line| line.unwrap().parse::<Symbol>().unwrap())
 }
 
-pub fn write_input(
+pub fn stream_write_input(
     n_ind: usize,
     ind_block_iter: impl Iterator<Item = u64>,
     mut data_iter: impl Iterator<Item = Symbol>,
@@ -58,7 +59,7 @@ pub fn write_input(
     Ok(())
 }
 
-pub fn read_next_input(
+pub fn stream_read_next_input(
     n_ind_left: &mut usize,
     mut reader: impl Read,
 ) -> Result<(BitVec<Lsb0, u64>, SymbolVec)> {

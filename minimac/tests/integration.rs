@@ -60,12 +60,12 @@ fn integration_test() {
     let handle = spawn(move || {
         let mut input_writer = InputWriter::new(N_IND, &input_ind_path, &input_dat_path);
         {
-            input_writer.write(&mut input_stream2).unwrap();
+            input_writer.stream(&mut input_stream2).unwrap();
         }
         StreamOutputReader::read(input_stream2).collect::<Vec<Real>>()
     });
 
-    let (thap_ind, thap_dat) = InputReader::new(input_stream1.clone()).into_pair_iter();
+    let (thap_ind, thap_dat) = InputReader::new(input_stream1.clone()).into_pair_iter_from_stream();
     let cache = OffloadCache::new(
         50,
         EncryptedCacheBackend::new(TcpCacheBackend::new(addr, 50)),

@@ -55,7 +55,7 @@ impl CacheBackend for TcpCacheBackend {
     type WriteBackend = TcpCacheWriteBackend;
     fn new_write(&mut self) -> Self::WriteBackend {
         TcpCacheWriteBackend {
-            stream: BufStream::new(tcp_keep_connecting(self.addr)),
+            stream: BufStream::with_capacities(1 << 20, 1 << 20, tcp_keep_connecting(self.addr)),
             capacity: self.capacity,
         }
     }

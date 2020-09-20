@@ -31,7 +31,8 @@ fn main() {
         &Path::new(INPUT_IND_FILE),
         &Path::new(INPUT_DAT_FILE),
     );
-    input_writer.write(&mut stream).unwrap();
+    input_writer.stream(&mut stream).unwrap();
+    //input_writer.write(&mut stream).unwrap();
     stream.flush().unwrap();
 
     let imputed = StreamOutputReader::read(stream).collect::<Vec<Real>>();

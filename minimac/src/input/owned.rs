@@ -1,16 +1,19 @@
 use super::*;
 use crate::symbol_vec::SymbolVec;
 use bitvec::prelude::{BitVec, Lsb0};
-use std::io::{Result, Write};
+use std::io::{Read, Result, Write};
 use std::path::Path;
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct OwnedInput {
     ind: BitVec<Lsb0, u64>,
     data: SymbolVec,
 }
 
 impl OwnedInput {
+    pub fn from_remote(reader: impl Read) -> Result<Self> {
+        bincode::deserialize_from(reader).map_err(|e| Error::new(ErrorKind::Other, e))
+    }
     pub fn load(ind_path: &Path, data_path: &Path) -> Self {
         Self {
             ind: Self::load_ind(ind_path),
@@ -29,7 +32,11 @@ impl OwnedInput {
 
 impl InputWrite for OwnedInput {
     fn write(&mut self, writer: impl Write) -> Result<()> {
-        super::write_input(
+        bincode::serialize_into(writer, self).map_err(|e| Error::new(ErrorKind::Other, e))
+    }
+
+    fn stream(&mut self, writer: impl Write) -> Result<()> {
+        super::stream_write_input(
             self.ind.len(),
             self.ind.as_slice().iter().cloned(),
             self.data.iter(),
