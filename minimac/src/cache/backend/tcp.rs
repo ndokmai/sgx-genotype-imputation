@@ -10,23 +10,35 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 
 pub struct TcpCacheBackend {
     addr: SocketAddr,
+    capacities: Option<(usize, usize)>,
 }
 
 impl TcpCacheBackend {
     pub fn new(addr: SocketAddr) -> Self {
-        Self { addr }
+        Self {
+            addr,
+            capacities: None,
+        }
     }
 
-    pub fn remote_proc<B>(port: u16, mut cache_backend: B)
+    pub fn with_capacities(reader_cap: usize, writer_cap: usize, addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            capacities: Some((reader_cap, writer_cap)),
+        }
+    }
+
+    pub fn remote_proc<B>(port: u16, n_caches: Option<usize>, mut cache_backend: B)
     where
         B: Cache,
         B::Save<Vec<u8>>: Send + 'static,
     {
         let listener = TcpListener::bind(("localhost", port)).unwrap();
-        for stream in listener.incoming() {
+        let mut handles = Vec::new();
+        for (i, stream) in listener.incoming().enumerate() {
             let mut stream = BufStream::new(stream.unwrap());
             let mut cache_save = cache_backend.new_save();
-            std::thread::spawn(move || {
+            handles.push(std::thread::spawn(move || {
                 loop {
                     let cmd: Cmd = stream.read_u8().unwrap().into();
                     match cmd {
@@ -45,7 +57,15 @@ impl TcpCacheBackend {
                         break;
                     }
                 }
-            });
+            }));
+            if let Some(n_caches) = n_caches {
+                if i == n_caches - 1 {
+                    break;
+                }
+            }
+        }
+        for handle in handles.into_iter() {
+            handle.join().unwrap();
         }
     }
 }
@@ -53,9 +73,14 @@ impl TcpCacheBackend {
 impl CacheBackend for TcpCacheBackend {
     type WriteBackend = TcpCacheWriteBackend;
     fn new_write(&mut self) -> Self::WriteBackend {
-        TcpCacheWriteBackend {
-            stream: BufStream::with_capacities(1 << 20, 1 << 20, tcp_keep_connecting(self.addr)),
-        }
+        let stream = tcp_keep_connecting(self.addr);
+        let stream = match self.capacities {
+            Some((reader_cap, writer_cap)) => {
+                BufStream::with_capacities(reader_cap, writer_cap, stream)
+            }
+            None => BufStream::new(stream),
+        };
+        TcpCacheWriteBackend { stream }
     }
 }
 
@@ -125,7 +150,7 @@ mod tests {
         let addr: SocketAddr = ([127, 0, 0, 1], port).into();
 
         std::thread::spawn(move || {
-            TcpCacheBackend::remote_proc(port, LocalCache);
+            TcpCacheBackend::remote_proc(port, Some(1), LocalCache);
         });
 
         let mut reference = Vec::new();

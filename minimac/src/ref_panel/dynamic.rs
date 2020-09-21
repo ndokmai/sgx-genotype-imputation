@@ -4,8 +4,9 @@ use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind, Lines, Read, Result};
 use std::path::Path;
-use std::sync::mpsc::{sync_channel, Receiver};
-use std::thread::spawn;
+//use std::sync::mpsc::{sync_channel, Receiver};
+use crossbeam::{bounded, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 
 pub struct RefPanelWriter {
     n_haps: usize,
@@ -63,35 +64,64 @@ impl RefPanelWrite for RefPanelWriter {
     }
 }
 
-pub struct RefPanelReader {
+pub struct RefPanelReader<R> {
     n_haps: usize,
     n_markers: usize,
     n_blocks: usize,
-    receiver: Receiver<Block>,
+    reader: Arc<Mutex<R>>,
+    send_block: Sender<Option<Block>>,
+    recv_block: Receiver<Option<Block>>,
 }
 
-impl RefPanelReader {
-    pub fn new(bound: usize, mut reader: impl Read + Send + 'static) -> Result<Self> {
-        let n_haps = reader.read_u32::<NetworkEndian>()? as usize;
-        let n_markers = reader.read_u32::<NetworkEndian>()? as usize;
-        let n_blocks = reader.read_u32::<NetworkEndian>()? as usize;
-        let (s, r) = sync_channel::<Block>(bound);
-        spawn(move || loop {
-            match bincode::deserialize_from(&mut reader) {
-                Ok(block) => s.send(block).unwrap(),
-                Err(_) => break,
-            }
-        });
+impl<R> RefPanelReader<R>
+where
+    R: Read + Send + 'static,
+{
+    pub fn new(bound: usize, reader: Arc<Mutex<R>>) -> Result<Self> {
+        let (send_block, recv_block) = bounded(bound);
+        let (n_haps, n_markers, n_blocks) = {
+            let mut reader = reader.lock().unwrap();
+            let n_haps = reader.read_u32::<NetworkEndian>()? as usize;
+            let n_markers = reader.read_u32::<NetworkEndian>()? as usize;
+            let n_blocks = reader.read_u32::<NetworkEndian>()? as usize;
+            (n_haps, n_markers, n_blocks)
+        };
+        Self::fill_buffer(send_block.clone(), reader.clone());
         Ok(Self {
             n_haps,
             n_markers,
             n_blocks,
-            receiver: r,
+            reader,
+            send_block,
+            recv_block,
         })
+    }
+
+    fn fill_buffer(send_block: Sender<Option<Block>>, reader: Arc<Mutex<R>>) {
+        if send_block.is_full() {
+            return;
+        }
+        rayon::spawn(move || {
+            if let Ok(mut reader) = reader.lock() {
+                for _ in 0..5 {
+                    if send_block.is_full() {
+                        break;
+                    }
+                    if let Ok(v) = bincode::deserialize_from(&mut *reader) {
+                        if send_block.send(Some(v)).is_err() {
+                            break;
+                        }
+                    } else {
+                        let _ = send_block.send(None);
+                        break;
+                    }
+                }
+            }
+        });
     }
 }
 
-impl RefPanel for RefPanelReader {
+impl<R> RefPanel for RefPanelReader<R> {
     fn n_haps(&self) -> usize {
         self.n_haps
     }
@@ -105,11 +135,15 @@ impl RefPanel for RefPanelReader {
     }
 }
 
-impl Iterator for RefPanelReader {
+impl<R> Iterator for RefPanelReader<R>
+where
+    R: Read + Send + 'static,
+{
     type Item = Block;
     fn next(&mut self) -> Option<Block> {
-        self.receiver.recv().ok()
+        Self::fill_buffer(self.send_block.clone(), self.reader.clone());
+        self.recv_block.recv().unwrap()
     }
 }
 
-impl RefPanelRead for RefPanelReader {}
+impl<R: Read + Send + 'static> RefPanelRead for RefPanelReader<R> {}

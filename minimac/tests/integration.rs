@@ -40,7 +40,7 @@ fn integration_test() {
     let port: u16 = 9999;
     let addr: SocketAddr = ([127, 0, 0, 1], port).into();
     spawn(move || {
-        TcpCacheBackend::remote_proc(port, OffloadCache::new(50, FileCacheBackend));
+        TcpCacheBackend::remote_proc(port, Some(6), OffloadCache::new(50, FileCacheBackend));
     });
 
     let ref_panel_path = Path::new(REF_PANEL_FILE);
@@ -52,7 +52,8 @@ fn integration_test() {
         let mut ref_panel_writer = RefPanelWriter::new(&ref_panel_path);
         ref_panel_writer.write(&mut ref_panel_stream2).unwrap();
     });
-    let ref_panel_reader = RefPanelReader::new(50, ref_panel_stream1).unwrap();
+    let ref_panel_reader =
+        RefPanelReader::new(50, Arc::new(Mutex::new(ref_panel_stream1))).unwrap();
     let n_markers = ref_panel_reader.n_markers();
 
     let (input_stream1, mut input_stream2) = pipe::bipipe();
@@ -65,7 +66,7 @@ fn integration_test() {
         StreamOutputReader::read(input_stream2).collect::<Vec<Real>>()
     });
 
-    let (thap_ind, thap_dat) = InputReader::new(input_stream1.clone()).into_pair_iter();
+    let (thap_ind, thap_dat) = InputReader::new(50, input_stream1.clone()).into_pair_iter();
     let cache = OffloadCache::new(50, EncryptedCacheBackend::new(TcpCacheBackend::new(addr)));
     let output_writer = LazyStreamOutputWriter::new(n_markers, input_stream1);
     impute_all(thap_ind, thap_dat, ref_panel_reader, cache, output_writer);

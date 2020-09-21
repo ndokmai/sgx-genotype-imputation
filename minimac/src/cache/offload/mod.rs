@@ -1,10 +1,9 @@
 use super::*;
+use crossbeam::{bounded, Receiver, Sender};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::io::{Error, ErrorKind, Result};
 use std::marker::PhantomData;
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-use std::thread::spawn;
+use std::sync::{Arc, Mutex};
 
 pub struct OffloadCache<B> {
     bound: usize,
@@ -21,8 +20,9 @@ impl<B> Cache for OffloadCache<B>
 where
     B: CacheBackend,
     B::WriteBackend: Send + 'static,
+    <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
 {
-    type Save<T: Send + 'static> = OffloadCacheSave<T, B>;
+    type Save<T: Send + 'static + Serialize + for<'de> Deserialize<'de>> = OffloadCacheSave<T, B>;
     fn new_save<T: Send + 'static + Serialize + for<'de> Deserialize<'de>>(
         &mut self,
     ) -> Self::Save<T> {
@@ -36,98 +36,124 @@ where
 {
     bound: usize,
     local: VecDeque<T>,
-    sender: SyncSender<T>,
-    retriever: Receiver<T>,
+    send_queue: Sender<T>,
+    send_dequeue: Receiver<T>,
+    backend: Arc<Mutex<B::WriteBackend>>,
     _phantom: PhantomData<B>,
 }
 
 impl<T, B> OffloadCacheSave<T, B>
 where
-    T: Send + 'static + Serialize + for<'de> Deserialize<'de>,
+    T: Send + 'static,
     B: CacheBackend,
-    B::WriteBackend: Send + 'static,
 {
-    pub fn new(bound: usize, cache_backend: B::WriteBackend) -> Self {
-        let (s1, r1) = sync_channel::<T>(bound);
-        let (s2, r2) = sync_channel::<T>(bound);
-        spawn(move || Self::offload_proc(r1, s2, cache_backend).unwrap());
+    pub fn new(bound: usize, backend: B::WriteBackend) -> Self {
+        let (send_queue, send_dequeue) = bounded(bound);
         Self {
             bound,
+            send_queue,
+            send_dequeue,
             local: VecDeque::with_capacity(bound),
-            sender: s1,
-            retriever: r2,
+            backend: Arc::new(Mutex::new(backend)),
             _phantom: PhantomData,
         }
-    }
-
-    fn offload_proc(
-        r: Receiver<T>,
-        s: SyncSender<T>,
-        mut cache_write_backend: B::WriteBackend,
-    ) -> Result<()> {
-        loop {
-            match r.recv() {
-                Ok(v) => cache_write_backend.push_cache_item(&v)?,
-                Err(_) => break,
-            }
-        }
-
-        let mut cache_read_backend = cache_write_backend.into_read();
-        loop {
-            match cache_read_backend.pop_cache_item() {
-                Ok(v) => s
-                    .send(v)
-                    .map_err(|_| Error::new(ErrorKind::Other, "Send error"))?,
-                Err(_) => break,
-            }
-        }
-        Ok(())
     }
 }
 
 impl<T, B> CacheSave<T> for OffloadCacheSave<T, B>
 where
-    T: Send + 'static,
+    T: Send + 'static + Serialize + for<'de> Deserialize<'de>,
     B: CacheBackend,
     B::WriteBackend: Send + 'static,
+    <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
 {
-    type Load = OffloadCacheLoad<T>;
+    type Load = OffloadCacheLoad<T, B>;
 
     fn push(&mut self, v: T) {
         if self.local.len() == self.bound {
             let v_to_send = self.local.pop_back().unwrap();
-            self.sender.send(v_to_send).unwrap();
+            self.send_queue.send(v_to_send).unwrap();
+            let backend = self.backend.clone();
+            let send_dequeue = self.send_dequeue.clone();
+            rayon::spawn(move || {
+                let mut backend = backend.lock().unwrap();
+                let v_to_send = send_dequeue.recv().unwrap();
+                backend.push_cache_item(&v_to_send).unwrap();
+            });
         }
         self.local.push_front(v);
     }
 
     fn into_load(self) -> Self::Load {
+        let (send_cache, recv_cache) = bounded(self.bound);
+        while Arc::strong_count(&self.backend) > 1 {}
+        let backend = Arc::try_unwrap(self.backend)
+            .ok()
+            .unwrap()
+            .into_inner()
+            .unwrap()
+            .into_read();
+        let backend = Arc::new(Mutex::new(backend));
+        OffloadCacheLoad::<_, B>::fill_buffer(send_cache.clone(), backend.clone());
         OffloadCacheLoad {
             local: self.local,
-            retriever: self.retriever,
+            backend,
+            send_cache,
+            recv_cache,
         }
     }
 }
 
-pub struct OffloadCacheLoad<T> {
+pub struct OffloadCacheLoad<T, B: CacheBackend> {
     local: VecDeque<T>,
-    retriever: Receiver<T>,
+    backend: Arc<Mutex<<B::WriteBackend as CacheWriteBackend>::ReadBackend>>,
+    send_cache: Sender<Option<T>>,
+    recv_cache: Receiver<Option<T>>,
 }
 
-impl<T> OffloadCacheLoad<T> {
-    pub fn pop(&mut self) -> Option<T> {
-        if self.local.is_empty() {
-            self.retriever.recv().ok()
-        } else {
-            self.local.pop_front()
+impl<T, B> OffloadCacheLoad<T, B>
+where
+    T: Send + 'static + for<'de> Deserialize<'de>,
+    B: CacheBackend,
+    <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
+{
+    fn fill_buffer(
+        send_cache: Sender<Option<T>>,
+        backend: Arc<Mutex<<B::WriteBackend as CacheWriteBackend>::ReadBackend>>,
+    ) {
+        if send_cache.is_full() {
+            return;
         }
+        rayon::spawn(move || {
+            if let Ok(mut backend) = backend.lock() {
+                for _ in 0..5 {
+                    if send_cache.is_full() {
+                        break;
+                    }
+                    if let Ok(v) = backend.pop_cache_item() {
+                        if send_cache.send(Some(v)).is_err() {
+                            break;
+                        }
+                    } else {
+                        let _ = send_cache.send(None);
+                        break;
+                    }
+                }
+            }
+        });
     }
 }
 
-impl<T> CacheLoad<T> for OffloadCacheLoad<T> {
+impl<T, B> CacheLoad<T> for OffloadCacheLoad<T, B>
+where
+    B: CacheBackend,
+    T: Send + 'static + for<'de> Deserialize<'de>,
+    <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
+{
     fn pop(&mut self) -> Option<T> {
         if self.local.is_empty() {
-            self.retriever.recv().ok()
+            Self::fill_buffer(self.send_cache.clone(), self.backend.clone());
+            self.recv_cache.recv().unwrap()
         } else {
             self.local.pop_front()
         }
