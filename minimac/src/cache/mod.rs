@@ -1,7 +1,8 @@
-#![allow(dead_code)]
+mod backend;
 mod local;
 mod offload;
 
+pub use backend::*;
 pub use local::*;
 pub use offload::*;
 

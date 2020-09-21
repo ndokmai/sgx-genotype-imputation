@@ -45,7 +45,6 @@ fn main() {
         100,
         EncryptedCacheBackend::new(TcpCacheBackend::new(
             SocketAddr::from_str("127.0.0.1:8888").unwrap(),
-            100,
         )),
     );
 

@@ -10,12 +10,11 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 
 pub struct TcpCacheBackend {
     addr: SocketAddr,
-    capacity: usize,
 }
 
 impl TcpCacheBackend {
-    pub fn new(addr: SocketAddr, capacity: usize) -> Self {
-        Self { addr, capacity }
+    pub fn new(addr: SocketAddr) -> Self {
+        Self { addr }
     }
 
     pub fn remote_proc<B>(port: u16, mut cache_backend: B)
@@ -56,14 +55,12 @@ impl CacheBackend for TcpCacheBackend {
     fn new_write(&mut self) -> Self::WriteBackend {
         TcpCacheWriteBackend {
             stream: BufStream::with_capacities(1 << 20, 1 << 20, tcp_keep_connecting(self.addr)),
-            capacity: self.capacity,
         }
     }
 }
 
 pub struct TcpCacheWriteBackend {
     stream: BufStream<TcpStream>,
-    capacity: usize,
 }
 
 impl CacheWriteBackend for TcpCacheWriteBackend {
@@ -135,7 +132,7 @@ mod tests {
         for i in 0..5 {
             reference.push(((i * 10)..((i + 1) * 10)).collect::<Vec<u64>>());
         }
-        let mut cache = TcpCacheBackend::new(addr, 3);
+        let mut cache = TcpCacheBackend::new(addr);
         let mut file = cache.new_write();
         for v in &reference {
             file.push_cache_item(v).unwrap();

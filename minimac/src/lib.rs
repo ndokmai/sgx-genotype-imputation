@@ -8,34 +8,32 @@
     feature(sgx_platform)
 )]
 
-pub mod block;
+#[cfg(feature = "leak-resistant")]
+mod bacc;
+mod block;
 pub mod cache;
 pub mod impute;
 pub mod input;
-pub mod output;
-pub mod ref_panel;
-pub mod symbol;
-pub mod symbol_vec;
-pub mod tcp;
-
-#[cfg(feature = "leak-resistant")]
-mod bacc;
 #[cfg(feature = "leak-resistant")]
 mod ln_fixed;
+pub mod output;
+pub mod ref_panel;
+mod symbol;
+mod symbol_vec;
+pub mod tcp;
 
 pub use crate::cache::*;
 pub use crate::impute::*;
 pub use crate::input::*;
 pub use crate::output::*;
 pub use crate::ref_panel::*;
-pub use crate::symbol::*;
 pub use crate::tcp::*;
 
 #[cfg(not(feature = "leak-resistant"))]
 mod inner {
     use super::*;
     pub type Real = f32;
-    pub type Input = Symbol;
+    pub type Input = symbol::Symbol;
 }
 
 #[cfg(feature = "leak-resistant")]

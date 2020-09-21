@@ -65,11 +65,8 @@ fn integration_test() {
         StreamOutputReader::read(input_stream2).collect::<Vec<Real>>()
     });
 
-    let (thap_ind, thap_dat) = InputReader::new(input_stream1.clone()).into_pair_iter_from_stream();
-    let cache = OffloadCache::new(
-        50,
-        EncryptedCacheBackend::new(TcpCacheBackend::new(addr, 50)),
-    );
+    let (thap_ind, thap_dat) = InputReader::new(input_stream1.clone()).into_pair_iter();
+    let cache = OffloadCache::new(50, EncryptedCacheBackend::new(TcpCacheBackend::new(addr)));
     let output_writer = LazyStreamOutputWriter::new(n_markers, input_stream1);
     impute_all(thap_ind, thap_dat, ref_panel_reader, cache, output_writer);
 
