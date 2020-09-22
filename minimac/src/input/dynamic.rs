@@ -61,7 +61,11 @@ pub struct InputReader<R> {
 impl<R: Read + Send + 'static> InputReader<R> {
     pub fn new(capacity: usize, reader: Arc<Mutex<R>>) -> Self {
         let n_ind = reader.lock().unwrap().read_u32::<NetworkEndian>().unwrap() as usize;
-        Self { n_ind, capacity, reader }
+        Self {
+            n_ind,
+            capacity,
+            reader,
+        }
     }
 }
 
@@ -80,7 +84,7 @@ impl<R: Read + Send + 'static> InputRead for InputReader<R> {
         );
         (
             IndexIter {
-                buffer: None, 
+                buffer: None,
                 reader: self.reader,
                 n_ind_left,
                 send_ind,
@@ -88,7 +92,7 @@ impl<R: Read + Send + 'static> InputRead for InputReader<R> {
                 recv_ind,
             },
             DataIter {
-                buffer: None, 
+                buffer: None,
                 recv_data,
             },
         )
@@ -123,15 +127,15 @@ impl<R: Read + Send + 'static> IndexIter<R> {
                     }
                     if let Ok((ind, data)) = stream_read_next_input(&mut *n_ind_left, &mut *reader)
                     {
-                        if send_ind.send(Some(ind)).is_err() {
-                            break;
-                        }
                         if send_data.send(Some(data)).is_err() {
                             break;
                         }
+                        if send_ind.send(Some(ind)).is_err() {
+                            break;
+                        }
                     } else {
-                        let _ = send_ind.send(None);
                         let _ = send_data.send(None);
+                        let _ = send_ind.send(None);
                         break;
                     }
                 }

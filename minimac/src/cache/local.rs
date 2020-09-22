@@ -3,8 +3,10 @@ use super::*;
 pub struct LocalCache;
 
 impl Cache for LocalCache {
-    type Save<T> = LocalCacheSave<T>;
-    fn new_save<T>(&mut self) -> Self::Save<T> {
+    type Save<T: Send + 'static + Serialize + for<'de> Deserialize<'de>> = LocalCacheSave<T>;
+    fn new_save<T: Send + 'static + Serialize + for<'de> Deserialize<'de>>(
+        &mut self,
+    ) -> Self::Save<T> {
         LocalCacheSave::new()
     }
 }
@@ -17,7 +19,7 @@ impl<T> LocalCacheSave<T> {
     }
 }
 
-impl<T> CacheSave<T> for LocalCacheSave<T> {
+impl<T: Send + 'static + Serialize + for<'de> Deserialize<'de>> CacheSave<T> for LocalCacheSave<T> {
     type Load = LocalCacheLoad<T>;
     #[inline]
     fn push(&mut self, v: T) {
@@ -31,7 +33,7 @@ impl<T> CacheSave<T> for LocalCacheSave<T> {
 
 pub struct LocalCacheLoad<T>(Vec<T>);
 
-impl<T> CacheLoad<T> for LocalCacheLoad<T> {
+impl<T: Send + for<'de> Deserialize<'de>> CacheLoad<T> for LocalCacheLoad<T> {
     #[inline]
     fn pop(&mut self) -> Option<T> {
         self.0.pop()

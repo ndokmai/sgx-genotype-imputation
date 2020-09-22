@@ -11,7 +11,7 @@ use std::time::Instant;
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(5)
+        .num_threads(7)
         .build_global()
         .unwrap();
 
@@ -47,18 +47,20 @@ fn main() {
     //.unwrap()
     //.into_pair_iter();
 
-    let cache = OffloadCache::new(
-        100,
-        EncryptedCacheBackend::new(TcpCacheBackend::with_capacities(
-            1 << 18,
-            1 << 18,
-            SocketAddr::from_str("127.0.0.1:8888").unwrap(),
-        )),
-    );
+    //let cache = OffloadCache::new(
+        //100,
+        //EncryptedCacheBackend::new(TcpCacheBackend::with_capacities(
+            //1 << 18,
+            //1 << 18,
+            //SocketAddr::from_str("127.0.0.1:8888").unwrap(),
+        //)),
+    //);
 
-    //let cache = OffloadCache::new(10, EncryptedCacheBackend::new(NonEnclaveLocalCacheBackend));
-
-    //let cache = LocalCache;
+    //let cache = OffloadNtCache::new(100, EncryptedCacheBackend::new(NonEnclaveLocalCacheBackend));
+    
+    //let cache = OffloadCache::new(100, FileCacheBackend);
+    
+    let cache = LocalCache;
 
     eprintln!("Server: connected to CacheServer");
 

@@ -1,4 +1,5 @@
 use minimac::*;
+use std::env;
 use std::io::BufWriter;
 use std::net::SocketAddr;
 use std::path::Path;
@@ -6,9 +7,24 @@ use std::str::FromStr;
 
 const REF_FILE: &'static str = "test_data/largeref.m3vcf";
 
+fn exit_print(name: &str) {
+    eprintln!("Usage: {} <reference panel file>", name);
+}
+
 fn main() {
-    eprintln!("Host: loading from reference panel ({})", REF_FILE);
-    let mut ref_panel = RefPanelWriter::new(&Path::new(&REF_FILE));
+    let args: Vec<String> = env::args().collect();
+    let mut ref_panel_file = REF_FILE;
+    if args.len() == 1 {
+        eprintln!("Using default parameters: ");
+    } else if args.len() != 2 {
+        return exit_print(&args[0]);
+    } else {
+        eprintln!("Using command line parameters: ");
+        ref_panel_file = args[1].as_str();
+    }
+    eprintln!("\tReference panel file:\t{}", ref_panel_file);
+
+    let mut ref_panel = RefPanelWriter::new(&Path::new(&ref_panel_file));
 
     eprintln!("Host: n_blocks = {}", ref_panel.n_blocks());
     eprintln!("Host: n_haps = {}", ref_panel.n_haps());
