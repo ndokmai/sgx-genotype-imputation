@@ -25,17 +25,17 @@ macro_rules! new_self_raw {
 macro_rules! impl_approx {
     ($f_cap: ident, $f: ident) => {
         paste! {
-            const [<$f_cap _COEFFS>]: [[Self; $f::POLY_DEG + 1]; $f::N_SEG] =
+            const [<$f_cap _COEFFS>]: [[Self; $f::N_SEG]; $f::POLY_DEG + 1] =
                 Self::[<$f _coeffs_fixed>]();
 
-            const fn [<$f _coeffs_fixed>]() -> [[Self; $f::POLY_DEG + 1]; $f::N_SEG] {
+            const fn [<$f _coeffs_fixed>]() -> [[Self; $f::N_SEG]; $f::POLY_DEG + 1] {
                 use $f::*;
-                let mut out = [[Self::ZERO; POLY_DEG + 1]; N_SEG];
+                let mut out = [[Self::ZERO; N_SEG]; POLY_DEG + 1];
                 let mut i = 0;
                 loop {
                     let mut j = 0;
                     loop {
-                        out[i][j] = Self::leaky_from_f32(COEFFS[i][j]);
+                        out[j][i] = Self::leaky_from_f32(COEFFS[i][j]);
                         j += 1;
                         if j == POLY_DEG + 1 {
                             break;
@@ -49,74 +49,43 @@ macro_rules! impl_approx {
                 out
             }
 
-            //fn $f(self) -> Self {
-                //use $f::*;
-                //let a = self.inner.expose();
-                //let mut x = a;
-                //let mut step = Self::leaky_from_i64(MAX_INPUT as i64 / 2).inner.expose();
-                //let mut pos_flags = [0i64; N_SPLIT];
-                //let mut flag = 1i64;
-                //for pos_flag in pos_flags.iter_mut() {
-                    //x -= step * (2 * flag - 1);
-                    //flag = (x >= 0) as i64;
-                    //*pos_flag = flag;
-                    //step /= 2;
-                //}
-
-                //let mut selector = [0i64; N_SEG];
-                //for i in 0..N_SEG {
-                    //let mut sel = 1i64;
-                    //for j in 0..N_SPLIT {
-                        //let bit = ((i & (1 << (N_SPLIT - j - 1))) > 0) as i64;
-                        //sel *= bit * pos_flags[j] + (1 - bit) * (1 - pos_flags[j]);
-                    //}
-                    //selector[i] = sel;
-                //}
-
-                //let mut coeffs = [0i64; POLY_DEG + 1];
-                //for i in 0..N_SEG {
-                    //for j in 0..(POLY_DEG + 1) {
-                        //coeffs[j] += Self::[<$f_cap _COEFFS>][i][j].inner.expose() * selector[i];
-                    //}
-                //}
-
-                //let mut res = coeffs[0] + ((a * coeffs[1]) >> F::USIZE);
-                //let mut a_pow = a;
-                //for &c in coeffs.iter().skip(2) {
-                    //a_pow = a_pow.wrapping_mul(a);
-                    //res += (a_pow * c) >> F::USIZE;
-                //}
-                //new_self_raw!(res)
-            //}
-
             fn $f(self) -> Self {
                 use $f::*;
+                let f = TpBool::protect(false);
+                let t = TpBool::protect(true);
+                let f_mask = TpI64::protect(0);
+                let t_mask = TpI64::protect(-1);
                 let mut x = self;
                 let mut step = Self::leaky_from_i64(MAX_INPUT >> 1);
-                let mut pos_flags = [TpBool::protect(false); N_SPLIT];
-                let mut flag = TpBool::protect(true);
+                let mut pos_flags = [f; N_SPLIT];
+                let mut flag = t;
                 for pos_flag in pos_flags.iter_mut() {
-                    x -= flag.select(step, -step);
+                    x += flag.select(-step, step);
                     flag = x.tp_gt_eq(&0);
                     *pos_flag = flag;
                     step >>= 1;
                 }
 
-                let mut selector = [TpBool::protect(false); N_SEG];
+                let mut selector = [f; N_SEG];
                 for i in 0..N_SEG {
-                    let mut sel = TpBool::protect(true);
-                    for j in 0..N_SPLIT {
-                        let bit = (i & (1 << (N_SPLIT - j - 1))) > 0;
-                        sel &= if bit { pos_flags[j] } else { !pos_flags[j] };
+                    let mut sel = t;
+                    let mut mask = 1 << (N_SPLIT - 1);
+                    for &p in &pos_flags {
+                        let bit = (i & mask) != 0;
+                        mask >>= 1;
+                        sel &= ! (bit ^ p);
                     }
-                    selector[i] = sel;
+                    selector[i] = sel; 
                 }
 
                 let mut coeffs = [Self::ZERO; POLY_DEG + 1];
-                for i in 0..N_SEG {
-                    for j in 0..(POLY_DEG + 1) {
-                        coeffs[j] += selector[i].select(Self::[<$f_cap _COEFFS>][i][j], Self::ZERO);
-                    }
+                for i in 0..(POLY_DEG + 1) {
+                    coeffs[i] = selector
+                        .iter()
+                        .zip(Self::[<$f_cap _COEFFS>][i].iter())
+                        .fold(Self::ZERO, |acc, (&s, &c)|  {
+                            acc + c * s.as_i64()
+                        });
                 }
 
                 let mut res = coeffs[0] + self * coeffs[1];
@@ -308,6 +277,21 @@ impl<F: Unsigned> std::ops::Mul<TpI64> for FixedInner<F> {
     #[inline]
     fn mul(self, rhs: TpI64) -> Self::Output {
         new_self!(self.inner * rhs)
+    }
+}
+
+impl<F: Unsigned> std::ops::MulAssign<TpI64> for FixedInner<F> {
+    #[inline]
+    fn mul_assign(&mut self, rhs: TpI64) {
+        self.inner *= rhs;
+    }
+}
+
+impl<F: Unsigned> std::ops::BitAnd<TpI64> for FixedInner<F> {
+    type Output = Self;
+    #[inline]
+    fn bitand(self, rhs: TpI64) -> Self::Output {
+        new_self!(self.inner & rhs)
     }
 }
 
