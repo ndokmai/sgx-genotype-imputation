@@ -58,6 +58,8 @@ fn main() {
     //input_writer.write(&mut stream).unwrap();
     stream.flush().unwrap();
 
+    eprintln!("Client: done sending inputs");
+
     let imputed = StreamOutputReader::read(stream).collect::<Vec<Real>>();
 
     let mut file = File::create(output_file).unwrap();

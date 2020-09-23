@@ -53,46 +53,39 @@ macro_rules! impl_approx {
                 use $f::*;
                 let f = TpBool::protect(false);
                 let t = TpBool::protect(true);
-                let f_mask = TpI64::protect(0);
-                let t_mask = TpI64::protect(-1);
                 let mut x = self;
                 let mut step = Self::leaky_from_i64(MAX_INPUT >> 1);
                 let mut pos_flags = [f; N_SPLIT];
                 let mut flag = t;
-                for pos_flag in pos_flags.iter_mut() {
-                    x += flag.select(-step, step);
+                for i in 0..N_SPLIT {
+                    x = flag.select(x - step, x + step);
                     flag = x.tp_gt_eq(&0);
-                    *pos_flag = flag;
+                    pos_flags[i] = flag;
                     step >>= 1;
                 }
 
-                let mut selector = [f; N_SEG];
+                let mut selector = [t; N_SEG];
                 for i in 0..N_SEG {
-                    let mut sel = t;
                     let mut mask = 1 << (N_SPLIT - 1);
-                    for &p in &pos_flags {
+                    for j in 0..N_SPLIT {
                         let bit = (i & mask) != 0;
                         mask >>= 1;
-                        sel &= ! (bit ^ p);
+                        selector[i] &= ! (bit ^ pos_flags[j]);
                     }
-                    selector[i] = sel; 
                 }
 
                 let mut coeffs = [Self::ZERO; POLY_DEG + 1];
-                for i in 0..(POLY_DEG + 1) {
-                    coeffs[i] = selector
-                        .iter()
-                        .zip(Self::[<$f_cap _COEFFS>][i].iter())
-                        .fold(Self::ZERO, |acc, (&s, &c)|  {
-                            acc + c * s.as_i64()
-                        });
+                for i in 0..N_SEG {
+                    for j in 0..(POLY_DEG + 1) {
+                        coeffs[j] += Self::[<$f_cap _COEFFS>][j][i] * selector[i].as_i64();
+                    }
                 }
 
                 let mut res = coeffs[0] + self * coeffs[1];
                 let mut self_pow = self;
-                for &c in coeffs.iter().skip(2) {
+                for i in 2..(POLY_DEG + 1) {
                     self_pow *= self;
-                    res += self_pow * c;
+                    res += self_pow * coeffs[i];
                 }
                 res
             }
@@ -131,21 +124,20 @@ impl<F: Unsigned> FixedInner<F> {
         a01: f32,
         a00: f32,
     ) -> Self {
-        let a0 = cond0.select(
-            Self::leaky_from_f32(a10).inner,
-            Self::leaky_from_f32(a00).inner,
-        );
-        let a1 = cond0.select(
-            Self::leaky_from_f32(a11).inner,
-            Self::leaky_from_f32(a01).inner,
-        );
+        let a11 = Self::leaky_from_f32(a11).inner;
+        let a10 = Self::leaky_from_f32(a10).inner;
+        let a01 = Self::leaky_from_f32(a01).inner;
+        let a00 = Self::leaky_from_f32(a00).inner;
+        let a0 = cond0.select(a10, a00);
+        let a1 = cond0.select(a11, a01);
         new_self!(cond1.select(a1, a0))
     }
 
     /// lse(a, b) = ln(exp(a) + exp(b))
     pub fn lse(self, other: Self) -> Self {
-        let max_val = (self.tp_gt_eq(&other)).select(self, other);
-        let diff = (self.tp_gt_eq(&other)).select(self - other, other - self);
+        let cmp = self.tp_gt_eq(&other);
+        let max_val = cmp.select(self, other);
+        let diff = cmp.select(self - other, other - self);
         max_val + Self::nls(diff)
     }
 
@@ -167,18 +159,20 @@ impl<F: Unsigned> FixedInner<F> {
 
     /// Approximate log function for domain 0 < a <= 1
     fn log_lt_one(self) -> Self {
+        let t = TpBool::protect(true);
+        let f = TpBool::protect(false);
         let onehalf = Self::leaky_from_i64(1) >> 1;
         let mut z = self;
         let mut z_scaled = Self::ZERO;
 
         let mut shift = TpU32::protect(0);
-        let mut first_flag = TpBool::protect(true);
+        let mut first_flag = t;
         for _ in 0..(F::USIZE - 1) {
             let bit = z.tp_gt_eq(&onehalf);
             shift += (!bit).as_u32();
             let found = first_flag & bit;
-            z_scaled = found.select(z, z_scaled);
-            first_flag = found.select(TpBool::protect(false), first_flag);
+            z_scaled += (z - z_scaled) * found.as_i64();
+            first_flag = found.select(f, first_flag);
             z <<= 1;
         }
 

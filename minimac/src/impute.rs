@@ -7,7 +7,7 @@ use crate::symbol_vec::SymbolVec;
 use crate::{Input, Real};
 use bitvec::prelude::{BitSlice, BitVec, Lsb0};
 use lazy_static::lazy_static;
-use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
+use ndarray::{s, Array1, ArrayView1, ArrayViewMut1, Zip};
 use std::convert::TryFrom;
 
 #[cfg(feature = "leak-resistant")]
@@ -80,9 +80,8 @@ pub fn impute_all(
 
         fwdprob_all_cache.push(sprob_all.clone());
 
-        let mut fwdprob = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
-        let mut fwdprob_norecom =
-            unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
+        let mut fwdprob = Vec::new();
+        let mut fwdprob_norecom = Vec::new();
 
         let mut sprob = fold_probabilities(sprob_all.view(), &block);
 
@@ -90,49 +89,45 @@ pub fn impute_all(
         let mut sprob_norecom = sprob.clone();
 
         // Cache forward probabilities at first position
-        fwdprob.row_mut(0).assign(&sprob);
-        fwdprob_norecom.row_mut(0).assign(&sprob_norecom);
+        fwdprob.push(sprob.clone());
+        fwdprob_norecom.push(sprob_norecom.clone());
 
         // Walk
         Zip::from(block.rprob.slice(s![..block.nvar - 1]))
             .and(block.afreq.slice(s![1..]))
             .and(&block.rhap[1..])
-            .and(fwdprob.slice_mut(s![1.., ..]).genrows_mut())
-            .and(fwdprob_norecom.slice_mut(s![1.., ..]).genrows_mut())
-            .apply(
-                |&rec, &block_afreq, rhap_row, mut fwdprob_row, mut fwdprob_norecom_row| {
-                    let tflag = thap_ind.next().unwrap();
-                    thap_ind_block.push(tflag);
-                    transition(
-                        rec,
-                        m_real,
-                        block.clustsize.view(),
+            .apply(|&rec, &block_afreq, rhap_row| {
+                let tflag = thap_ind.next().unwrap();
+                thap_ind_block.push(tflag);
+                transition(
+                    rec,
+                    m_real,
+                    block.clustsize.view(),
+                    sprob.view_mut(),
+                    sprob_norecom.view_mut(),
+                );
+
+                if tflag {
+                    let tsym = thap_dat.next().unwrap();
+
+                    #[cfg(not(feature = "leak-resistant"))]
+                    thap_dat_block.push(tsym);
+
+                    #[cfg(feature = "leak-resistant")]
+                    thap_dat_block.push(tsym.expose().into());
+
+                    later_emission(
+                        tsym,
                         sprob.view_mut(),
                         sprob_norecom.view_mut(),
+                        block_afreq,
+                        rhap_row,
                     );
+                }
 
-                    if tflag {
-                        let tsym = thap_dat.next().unwrap();
-
-                        #[cfg(not(feature = "leak-resistant"))]
-                        thap_dat_block.push(tsym);
-
-                        #[cfg(feature = "leak-resistant")]
-                        thap_dat_block.push(tsym.expose().into());
-
-                        later_emission(
-                            tsym,
-                            sprob.view_mut(),
-                            sprob_norecom.view_mut(),
-                            block_afreq,
-                            rhap_row,
-                        );
-                    }
-
-                    fwdprob_row.assign(&sprob);
-                    fwdprob_norecom_row.assign(&sprob_norecom);
-                },
-            );
+                fwdprob.push(sprob.clone());
+                fwdprob_norecom.push(sprob_norecom.clone());
+            });
 
         let sprob_recom = &sprob - &sprob_norecom;
 
@@ -210,9 +205,9 @@ pub fn impute_all(
                 jprob.view(),
                 block.clustsize.view(),
                 block.rhap[j].as_bitslice(),
-                fwdprob.slice(s![j, ..]),
+                fwdprob[j].view(),
                 fwdprob_first.view(),
-                fwdprob_norecom.slice(s![j, ..]),
+                fwdprob_norecom[j].view(),
                 sprob.view(),
                 sprob_first.view(),
                 sprob_norecom.view(),
@@ -248,9 +243,9 @@ pub fn impute_all(
                     jprob.view(),
                     block.clustsize.view(),
                     block.rhap[0].as_bitslice(),
-                    fwdprob.slice(s![0, ..]),
+                    fwdprob[0].view(),
                     fwdprob_first.view(),
-                    fwdprob_norecom.slice(s![0, ..]),
+                    fwdprob_norecom[0].view(),
                     sprob.view(),
                     sprob_first.view(),
                     sprob_norecom.view(),
