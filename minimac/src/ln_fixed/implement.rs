@@ -21,6 +21,22 @@ impl<F: Unsigned> LnFixed<F> {
         Self(FixedInner::leaky_from_f32(f.ln()))
     }
 
+    pub fn sum_in_place(slice: &mut [Self]) -> Self {
+        if slice.is_empty() {
+            return Self::EPS;
+        } else if slice.len() == 1 {
+            return slice[0];
+        } else if slice.len() <= 8 {
+            return slice[1..].iter().fold(slice[0], |acc, &a| acc + a);
+        }
+        let first_half_len = (slice.len() + 1) / 2;
+        let second_half_len = slice.len() / 2;
+        for i in 0..second_half_len {
+            slice[i] += slice[i + first_half_len];
+        }
+        return Self::sum_in_place(&mut slice[..first_half_len]);
+    }
+
     pub fn leaky_from_i64(i: i64) -> Self {
         Self(FixedInner::leaky_from_f32((i as f32).ln()))
     }
@@ -180,7 +196,15 @@ impl<F: Unsigned> std::iter::Sum<LnFixed<F>> for LnFixed<F> {
     where
         I: Iterator<Item = LnFixed<F>>,
     {
-        let mut accu = Vec::new();
+        let first_pair = match iter.next() {
+            Some(first) => match iter.next() {
+                Some(second) => first + second,
+                None => return first,
+            },
+            None => return LnFixed::EPS,
+        };
+        let mut accu = Vec::with_capacity(20);
+        accu.push(first_pair);
         loop {
             match iter.next() {
                 Some(first) => match iter.next() {
@@ -193,13 +217,10 @@ impl<F: Unsigned> std::iter::Sum<LnFixed<F>> for LnFixed<F> {
                 None => break,
             }
         }
-        if accu.is_empty() {
-            return LnFixed::EPS;
-        }
         if accu.len() == 1 {
             return accu[0];
         }
-        accu.into_iter().sum::<Self>()
+        Self::sum_in_place(accu.as_mut_slice())
     }
 }
 

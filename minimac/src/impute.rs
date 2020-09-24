@@ -7,17 +7,12 @@ use crate::symbol_vec::SymbolVec;
 use crate::{Input, Real};
 use bitvec::prelude::{BitSlice, BitVec, Lsb0};
 use lazy_static::lazy_static;
-use ndarray::{s, Array1, ArrayView1, ArrayViewMut1, Zip};
+use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
+use num_traits::identities::One;
 use std::convert::TryFrom;
 
 #[cfg(feature = "leak-resistant")]
-mod leak_resistant_mod {
-    pub use crate::bacc::Bacc;
-    pub use timing_shield::{TpEq, TpI8, TpOrd};
-}
-
-#[cfg(feature = "leak-resistant")]
-use leak_resistant_mod::*;
+pub use timing_shield::{TpEq, TpI8, TpOrd};
 
 const BACKGROUND: f32 = 1e-5;
 const ERR: f32 = 0.00999;
@@ -80,8 +75,9 @@ pub fn impute_all(
 
         fwdprob_all_cache.push(sprob_all.clone());
 
-        let mut fwdprob = Vec::new();
-        let mut fwdprob_norecom = Vec::new();
+        let mut fwdprob = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
+        let mut fwdprob_norecom =
+            unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
 
         let mut sprob = fold_probabilities(sprob_all.view(), &block);
 
@@ -89,45 +85,49 @@ pub fn impute_all(
         let mut sprob_norecom = sprob.clone();
 
         // Cache forward probabilities at first position
-        fwdprob.push(sprob.clone());
-        fwdprob_norecom.push(sprob_norecom.clone());
+        fwdprob.row_mut(0).assign(&sprob);
+        fwdprob_norecom.row_mut(0).assign(&sprob_norecom);
 
         // Walk
         Zip::from(block.rprob.slice(s![..block.nvar - 1]))
             .and(block.afreq.slice(s![1..]))
             .and(&block.rhap[1..])
-            .apply(|&rec, &block_afreq, rhap_row| {
-                let tflag = thap_ind.next().unwrap();
-                thap_ind_block.push(tflag);
-                transition(
-                    rec,
-                    m_real,
-                    block.clustsize.view(),
-                    sprob.view_mut(),
-                    sprob_norecom.view_mut(),
-                );
-
-                if tflag {
-                    let tsym = thap_dat.next().unwrap();
-
-                    #[cfg(not(feature = "leak-resistant"))]
-                    thap_dat_block.push(tsym);
-
-                    #[cfg(feature = "leak-resistant")]
-                    thap_dat_block.push(tsym.expose().into());
-
-                    later_emission(
-                        tsym,
+            .and(fwdprob.slice_mut(s![1.., ..]).genrows_mut())
+            .and(fwdprob_norecom.slice_mut(s![1.., ..]).genrows_mut())
+            .apply(
+                |&rec, &block_afreq, rhap_row, mut fwdprob_row, mut fwdprob_norecom_row| {
+                    let tflag = thap_ind.next().unwrap();
+                    thap_ind_block.push(tflag);
+                    transition(
+                        rec,
+                        m_real,
+                        block.clustsize.view(),
                         sprob.view_mut(),
                         sprob_norecom.view_mut(),
-                        block_afreq,
-                        rhap_row,
                     );
-                }
 
-                fwdprob.push(sprob.clone());
-                fwdprob_norecom.push(sprob_norecom.clone());
-            });
+                    if tflag {
+                        let tsym = thap_dat.next().unwrap();
+
+                        #[cfg(not(feature = "leak-resistant"))]
+                        thap_dat_block.push(tsym);
+
+                        #[cfg(feature = "leak-resistant")]
+                        thap_dat_block.push(tsym.expose().into());
+
+                        later_emission(
+                            tsym,
+                            sprob.view_mut(),
+                            sprob_norecom.view_mut(),
+                            block_afreq,
+                            rhap_row,
+                        );
+                    }
+
+                    fwdprob_row.assign(&sprob);
+                    fwdprob_norecom_row.assign(&sprob_norecom);
+                },
+            );
 
         let sprob_recom = &sprob - &sprob_norecom;
 
@@ -162,7 +162,7 @@ pub fn impute_all(
     let mut fwdprob_all_cache = fwdprob_all_cache.into_load();
 
     // Backward pass
-    let mut sprob_all = Array1::<Real>::ones(m);
+    sprob_all.fill(Real::one());
     for b in (0..n_blocks).rev() {
         let block = block_cache.pop().unwrap();
         let (mut thap_ind_block, mut thap_dat_block) = thap_block_cache.pop().unwrap();
@@ -187,11 +187,16 @@ pub fn impute_all(
 
         #[cfg(feature = "leak-resistant")]
         let jprob = {
-            let mut jprob = vec![Bacc::init(); block.nuniq];
+            let mut jprob = vec![Vec::with_capacity(20); block.nuniq];
             for ((&ind, &c), &p) in block.indmap.iter().zip(&fwdprob_all).zip(sprob_all.iter()) {
-                jprob[ind as usize] += c * p;
+                jprob[ind as usize].push(c * p);
             }
-            Array1::from(jprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
+            Array1::from(
+                jprob
+                    .into_iter()
+                    .map(|mut v| Real::sum_in_place(v.as_mut_slice()))
+                    .collect::<Vec<Real>>(),
+            )
         };
 
         let mut sprob = fold_probabilities(sprob_all.view(), &block);
@@ -205,9 +210,9 @@ pub fn impute_all(
                 jprob.view(),
                 block.clustsize.view(),
                 block.rhap[j].as_bitslice(),
-                fwdprob[j].view(),
+                fwdprob.row(j),
                 fwdprob_first.view(),
-                fwdprob_norecom[j].view(),
+                fwdprob_norecom.row(j),
                 sprob.view(),
                 sprob_first.view(),
                 sprob_norecom.view(),
@@ -243,9 +248,9 @@ pub fn impute_all(
                     jprob.view(),
                     block.clustsize.view(),
                     block.rhap[0].as_bitslice(),
-                    fwdprob[0].view(),
+                    fwdprob.row(0),
                     fwdprob_first.view(),
-                    fwdprob_norecom[0].view(),
+                    fwdprob_norecom.row(0),
                     sprob.view(),
                     sprob_first.view(),
                     sprob_norecom.view(),
@@ -279,11 +284,16 @@ fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real
 
     #[cfg(feature = "leak-resistant")]
     {
-        let mut sprob = vec![Bacc::init(); block.nuniq];
+        let mut sprob = vec![Vec::with_capacity(20); block.nuniq];
         for (&ind, &p) in block.indmap.iter().zip(sprob_all.iter()) {
-            sprob[ind as usize] += p;
+            sprob[ind as usize].push(p);
         }
-        Array1::from(sprob.into_iter().map(|v| v.result()).collect::<Vec<Real>>())
+        Array1::from(
+            sprob
+                .into_iter()
+                .map(|mut v| Real::sum_in_place(v.as_mut_slice()))
+                .collect::<Vec<Real>>(),
+        )
     }
 }
 
@@ -458,19 +468,13 @@ fn impute(
 
     #[cfg(feature = "leak-resistant")]
     let (p0, p1) = {
-        let (p0, p1) = combined.iter().zip(rhap_row.iter()).fold(
-            (Bacc::init(), Bacc::init()),
-            |mut acc, (&c, &rsym)| {
-                if rsym {
-                    acc.1 += c;
-                    acc
-                } else {
-                    acc.0 += c;
-                    acc
-                }
-            },
-        );
-        (p0.result(), p1.result())
+        let mut r_iter = rhap_row.iter();
+        let (mut p1, mut p0): (Vec<_>, Vec<_>) =
+            combined.into_iter().partition(|_| *r_iter.next().unwrap());
+        (
+            Real::sum_in_place(p0.as_mut_slice()),
+            Real::sum_in_place(p1.as_mut_slice()),
+        )
     };
     p1 / (p1 + p0)
 }

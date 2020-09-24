@@ -1,15 +1,15 @@
 #![feature(const_fn)]
+#![feature(const_fn_transmute)]
 #![feature(seek_convenience)]
 #![feature(generic_associated_types)]
 #![feature(type_alias_impl_trait)]
+#![feature(iter_partition_in_place)]
 #![allow(incomplete_features)]
 #![cfg_attr(
     all(target_env = "sgx", target_vendor = "fortanix"),
     feature(sgx_platform)
 )]
 
-#[cfg(feature = "leak-resistant")]
-mod bacc;
 mod block;
 pub mod cache;
 pub mod impute;
