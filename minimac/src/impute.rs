@@ -163,6 +163,7 @@ pub fn impute_all(
 
     // Backward pass
     sprob_all.fill(Real::one());
+
     for b in (0..n_blocks).rev() {
         let block = block_cache.pop().unwrap();
         let (mut thap_ind_block, mut thap_dat_block) = thap_block_cache.pop().unwrap();
@@ -171,34 +172,7 @@ pub fn impute_all(
         let fwdprob_first = fwdprob_first_cache.pop().unwrap();
         let fwdprob_all = fwdprob_all_cache.pop().unwrap();
 
-        // Precompute joint fwd-bwd term for imputation;
-        // same as "Constants" variable in minimac
-        #[cfg(not(feature = "leak-resistant"))]
-        let jprob = {
-            let mut jprob = Array1::<Real>::zeros(block.nuniq);
-            Zip::from(&block.indmap)
-                .and(&fwdprob_all)
-                .and(&sprob_all)
-                .apply(|&ind, &c, &p| {
-                    jprob[ind as usize] += c * p;
-                });
-            jprob
-        };
-
-        #[cfg(feature = "leak-resistant")]
-        let jprob = {
-            let mut jprob = vec![Vec::with_capacity(20); block.nuniq];
-            for ((&ind, &c), &p) in block.indmap.iter().zip(&fwdprob_all).zip(sprob_all.iter()) {
-                jprob[ind as usize].push(c * p);
-            }
-            Array1::from(
-                jprob
-                    .into_iter()
-                    .map(|mut v| Real::sum_in_place(v.as_mut_slice()))
-                    .collect::<Vec<Real>>(),
-            )
-        };
-
+        let jprob = precompute_joint(&block, sprob_all.view(), fwdprob_all.view());
         let mut sprob = fold_probabilities(sprob_all.view(), &block);
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
@@ -241,26 +215,23 @@ pub fn impute_all(
                 sprob.view_mut(),
                 sprob_norecom.view_mut(),
             );
-
-            // Impute very first position (edge case)
-            if b == 0 && j == 1 {
-                output_writer.push(impute(
-                    jprob.view(),
-                    block.clustsize.view(),
-                    block.rhap[0].as_bitslice(),
-                    fwdprob.row(0),
-                    fwdprob_first.view(),
-                    fwdprob_norecom.row(0),
-                    sprob.view(),
-                    sprob_first.view(),
-                    sprob_norecom.view(),
-                ));
-            }
         }
 
-        let sprob_recom = &sprob - &sprob_norecom;
-
-        if b > 0 {
+        if b == 0 {
+            // Impute very first position (edge case)
+            output_writer.push(impute(
+                jprob.view(),
+                block.clustsize.view(),
+                block.rhap[0].as_bitslice(),
+                fwdprob.row(0),
+                fwdprob_first.view(),
+                fwdprob_norecom.row(0),
+                sprob.view(),
+                sprob_first.view(),
+                sprob_norecom.view(),
+            ));
+        } else {
+            let sprob_recom = &sprob - &sprob_norecom;
             unfold_probabilities(
                 &block,
                 sprob_all.view_mut(),
@@ -431,6 +402,40 @@ fn unfold_probabilities(
             *p = (sprob_recom[ui] / block.clustsize[ui])
                 + (*p * (sprob_norecom[ui] / (sprob_first[ui] + E)));
         });
+}
+
+// Precompute joint fwd-bwd term for imputation;
+// same as "Constants" variable in minimac
+fn precompute_joint(
+    block: &Block,
+    sprob_all: ArrayView1<Real>,
+    fwdprob_all: ArrayView1<Real>,
+) -> Array1<Real> {
+    #[cfg(not(feature = "leak-resistant"))]
+    {
+        let mut jprob = Array1::<Real>::zeros(block.nuniq);
+        Zip::from(&block.indmap)
+            .and(fwdprob_all)
+            .and(sprob_all)
+            .apply(|&ind, &c, &p| {
+                jprob[ind as usize] += c * p;
+            });
+        jprob
+    }
+
+    #[cfg(feature = "leak-resistant")]
+    {
+        let mut jprob = vec![Vec::with_capacity(20); block.nuniq];
+        for ((&ind, &c), &p) in block.indmap.iter().zip(&fwdprob_all).zip(sprob_all.iter()) {
+            jprob[ind as usize].push(c * p);
+        }
+        Array1::from(
+            jprob
+                .into_iter()
+                .map(|mut v| Real::sum_in_place(v.as_mut_slice()))
+                .collect::<Vec<Real>>(),
+        )
+    }
 }
 
 #[allow(non_snake_case)]
