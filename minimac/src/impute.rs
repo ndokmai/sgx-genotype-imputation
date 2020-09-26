@@ -131,16 +131,16 @@ pub fn minimac<O: OutputWrite<Real> + Send + 'static>(
                 },
             );
 
-        let sprob_recom = &sprob - &sprob_norecom;
 
         // Skip last block
         if b < n_blocks - 1 {
+            let sprob_recom = sprob - sprob_norecom.clone();
             unfold_probabilities(
                 &block,
                 sprob_all.view_mut(),
-                sprob_first.view(),
-                sprob_recom.view(),
-                sprob_norecom.view(),
+                sprob_first.clone(),
+                sprob_recom,
+                sprob_norecom,
             );
         }
         thap_ind_block.shrink_to_fit();
@@ -237,13 +237,13 @@ pub fn minimac<O: OutputWrite<Real> + Send + 'static>(
             sprod_first_send.send(sprob_first).unwrap();
             sprod_norecomb_send.send(sprob_norecom).unwrap();
         } else {
-            let sprob_recom = &sprob - &sprob_norecom;
+            let sprob_recom = sprob - sprob_norecom.clone();
             unfold_probabilities(
                 &block,
                 sprob_all.view_mut(),
-                sprob_first.view(),
-                sprob_recom.view(),
-                sprob_norecom.view(),
+                sprob_first,
+                sprob_recom,
+                sprob_norecom,
             );
         }
     }
@@ -397,17 +397,18 @@ fn transition(
 fn unfold_probabilities(
     block: &Block,
     mut sprob_all: ArrayViewMut1<Real>,
-    sprob_first: ArrayView1<Real>,
-    sprob_recom: ArrayView1<Real>,
-    sprob_norecom: ArrayView1<Real>,
+    sprob_first: Array1<Real>,
+    sprob_recom: Array1<Real>,
+    sprob_norecom: Array1<Real>,
 ) {
-    let E = *_E;
+    let precomp1 = sprob_recom / block.clustsize.to_owned();
+    let precomp2 = sprob_norecom / (sprob_first + *_E);
+
     Zip::from(&mut sprob_all)
         .and(&block.indmap)
         .apply(|p, &ui| {
             let ui = ui as usize;
-            *p = (sprob_recom[ui] / block.clustsize[ui])
-                + (*p * (sprob_norecom[ui] / (sprob_first[ui] + E)));
+            *p = precomp1[ui] + *p * precomp2[ui];
         });
 }
 
@@ -418,14 +419,15 @@ fn precompute_joint(
     sprob_all: Array1<Real>,
     fwdprob_all: Array1<Real>,
 ) -> Array1<Real> {
+    let precomp = sprob_all * fwdprob_all;
+
     #[cfg(not(feature = "leak-resistant"))]
     {
         let mut jprob = Array1::<Real>::zeros(block.nuniq);
         Zip::from(&block.indmap)
-            .and(&fwdprob_all)
-            .and(&sprob_all)
-            .apply(|&ind, c, p| {
-                jprob[ind as usize] += c * p;
+            .and(&precomp)
+            .apply(|&ind, p| {
+                jprob[ind as usize] += p;
             });
         jprob
     }
@@ -433,13 +435,12 @@ fn precompute_joint(
     #[cfg(feature = "leak-resistant")]
     {
         let mut jprob = vec![Vec::with_capacity(20); block.nuniq];
-        for ((&ind, &c), &p) in block
+        for (&ind, &p) in block
             .indmap
             .iter()
-            .zip(fwdprob_all.into_iter())
-            .zip(sprob_all.into_iter())
+            .zip(precomp.into_iter())
         {
-            jprob[ind as usize].push(c * p);
+            jprob[ind as usize].push(p);
         }
         Array1::from(
             jprob
