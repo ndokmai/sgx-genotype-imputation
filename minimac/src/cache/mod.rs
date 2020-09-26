@@ -27,6 +27,6 @@ pub trait CacheSave<T: Send + 'static + Serialize + for<'de> Deserialize<'de>> {
     fn into_load(self) -> Self::Load;
 }
 
-pub trait CacheLoad<T: Send + for<'de> Deserialize<'de>> {
+pub trait CacheLoad<T: Send + for<'de> Deserialize<'de>>: Send + 'static {
     fn pop(&mut self) -> Option<T>;
 }

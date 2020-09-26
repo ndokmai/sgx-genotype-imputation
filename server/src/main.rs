@@ -11,7 +11,7 @@ use std::time::Instant;
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(7)
+        .num_threads(6)
         .build_global()
         .unwrap();
 
@@ -64,7 +64,7 @@ fn main() {
 
     eprintln!("Server: connected to CacheServer");
 
-    let mut output_writer =
+    let output_writer =
         LazyStreamOutputWriter::new(ref_panel_reader.n_markers(), client_stream);
 
     //let mut output_writer = OwnedOutputWriter::new();
@@ -73,12 +73,12 @@ fn main() {
 
     let now = std::time::Instant::now();
 
-    impute_all(
+    minimac(
         thap_ind,
         thap_dat,
         ref_panel_reader,
         cache,
-        &mut output_writer,
+        output_writer,
     );
 
     eprintln!(

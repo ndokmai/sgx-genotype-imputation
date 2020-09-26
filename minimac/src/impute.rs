@@ -6,6 +6,7 @@ use crate::symbol::Symbol;
 use crate::symbol_vec::SymbolVec;
 use crate::{Input, Real};
 use bitvec::prelude::{BitSlice, BitVec, Lsb0};
+use crossbeam::{bounded, Receiver};
 use lazy_static::lazy_static;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use num_traits::identities::One;
@@ -28,13 +29,14 @@ lazy_static! {
     static ref _E: Real = __E.into();
 }
 
-pub fn impute_all(
+pub fn minimac<O: OutputWrite<Real> + Send + 'static>(
     mut thap_ind: impl Iterator<Item = bool>,
     mut thap_dat: impl Iterator<Item = Input>,
     mut ref_panel: impl RefPanelRead,
     mut cache: impl Cache,
-    mut output_writer: impl OutputWrite<Real>,
-) {
+    output_writer: O,
+) -> O
+{
     let m = ref_panel.n_haps();
     let m_real: Real = u16::try_from(m).unwrap().into();
     let n_blocks = ref_panel.n_blocks();
@@ -156,41 +158,53 @@ pub fn impute_all(
 
     let mut block_cache = block_cache.into_load();
     let mut thap_block_cache = thap_block_cache.into_load();
-    let mut fwdprob_cache = fwdprob_cache.into_load();
-    let mut fwdprob_norecom_cache = fwdprob_norecom_cache.into_load();
-    let mut fwdprob_first_cache = fwdprob_first_cache.into_load();
-    let mut fwdprob_all_cache = fwdprob_all_cache.into_load();
+    let fwdprob_cache = fwdprob_cache.into_load();
+    let fwdprob_norecom_cache = fwdprob_norecom_cache.into_load();
+    let fwdprob_first_cache = fwdprob_first_cache.into_load();
+    let fwdprob_all_cache = fwdprob_all_cache.into_load();
 
     // Backward pass
     sprob_all.fill(Real::one());
 
+    let bound = 30;
+    let (block_send, block_recv) = bounded(bound);
+    let (sprod_send, sprob_recv) = bounded(bound);
+    let (sprod_first_send, sprob_first_recv) = bounded(bound);
+    let (sprod_norecomb_send, sprob_norecom_recv) = bounded(bound);
+    let (sprod_all_send, sprob_all_recv) = bounded(bound);
+
+    let handle = std::thread::spawn(move || 
+        impute_all(
+            n_blocks,
+            block_recv,
+            sprob_recv,
+            sprob_first_recv,
+            sprob_norecom_recv,
+            sprob_all_recv,
+            fwdprob_cache,
+            fwdprob_first_cache,
+            fwdprob_norecom_cache,
+            fwdprob_all_cache,
+            output_writer,
+        )
+    );
+
     for b in (0..n_blocks).rev() {
         let block = block_cache.pop().unwrap();
         let (mut thap_ind_block, mut thap_dat_block) = thap_block_cache.pop().unwrap();
-        let fwdprob = fwdprob_cache.pop().unwrap();
-        let fwdprob_norecom = fwdprob_norecom_cache.pop().unwrap();
-        let fwdprob_first = fwdprob_first_cache.pop().unwrap();
-        let fwdprob_all = fwdprob_all_cache.pop().unwrap();
 
-        let jprob = precompute_joint(&block, sprob_all.view(), fwdprob_all.view());
+        block_send.send(block.to_owned()).unwrap();
+        sprod_all_send.send(sprob_all.to_owned()).unwrap();
+
         let mut sprob = fold_probabilities(sprob_all.view(), &block);
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
 
         // Walk
         for j in (1..block.nvar).rev() {
-            let rec = block.rprob[j - 1];
-            output_writer.push(impute(
-                jprob.view(),
-                block.clustsize.view(),
-                block.rhap[j].as_bitslice(),
-                fwdprob.row(j),
-                fwdprob_first.view(),
-                fwdprob_norecom.row(j),
-                sprob.view(),
-                sprob_first.view(),
-                sprob_norecom.view(),
-            ));
+            sprod_send.send(sprob.to_owned()).unwrap();
+            sprod_first_send.send(sprob_first.to_owned()).unwrap();
+            sprod_norecomb_send.send(sprob_norecom.to_owned()).unwrap();
 
             if thap_ind_block.pop().unwrap() {
                 #[cfg(not(feature = "leak-resistant"))]
@@ -208,6 +222,7 @@ pub fn impute_all(
                 );
             }
 
+            let rec = block.rprob[j - 1];
             transition(
                 rec,
                 m_real,
@@ -218,18 +233,9 @@ pub fn impute_all(
         }
 
         if b == 0 {
-            // Impute very first position (edge case)
-            output_writer.push(impute(
-                jprob.view(),
-                block.clustsize.view(),
-                block.rhap[0].as_bitslice(),
-                fwdprob.row(0),
-                fwdprob_first.view(),
-                fwdprob_norecom.row(0),
-                sprob.view(),
-                sprob_first.view(),
-                sprob_norecom.view(),
-            ));
+            sprod_send.send(sprob).unwrap();
+            sprod_first_send.send(sprob_first).unwrap();
+            sprod_norecomb_send.send(sprob_norecom).unwrap();
         } else {
             let sprob_recom = &sprob - &sprob_norecom;
             unfold_probabilities(
@@ -241,6 +247,7 @@ pub fn impute_all(
             );
         }
     }
+    handle.join().unwrap()
 }
 
 fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real> {
@@ -408,16 +415,16 @@ fn unfold_probabilities(
 // same as "Constants" variable in minimac
 fn precompute_joint(
     block: &Block,
-    sprob_all: ArrayView1<Real>,
-    fwdprob_all: ArrayView1<Real>,
+    sprob_all: Array1<Real>,
+    fwdprob_all: Array1<Real>,
 ) -> Array1<Real> {
     #[cfg(not(feature = "leak-resistant"))]
     {
         let mut jprob = Array1::<Real>::zeros(block.nuniq);
         Zip::from(&block.indmap)
-            .and(fwdprob_all)
-            .and(sprob_all)
-            .apply(|&ind, &c, &p| {
+            .and(&fwdprob_all)
+            .and(&sprob_all)
+            .apply(|&ind, c, p| {
                 jprob[ind as usize] += c * p;
             });
         jprob
@@ -426,7 +433,12 @@ fn precompute_joint(
     #[cfg(feature = "leak-resistant")]
     {
         let mut jprob = vec![Vec::with_capacity(20); block.nuniq];
-        for ((&ind, &c), &p) in block.indmap.iter().zip(&fwdprob_all).zip(sprob_all.iter()) {
+        for ((&ind, &c), &p) in block
+            .indmap
+            .iter()
+            .zip(fwdprob_all.into_iter())
+            .zip(sprob_all.into_iter())
+        {
             jprob[ind as usize].push(c * p);
         }
         Array1::from(
@@ -440,21 +452,21 @@ fn precompute_joint(
 
 #[allow(non_snake_case)]
 fn impute(
-    jprob: ArrayView1<Real>,
+    jprob: Array1<Real>,
     clustsize: ArrayView1<Real>,
     rhap_row: &BitSlice,
-    fwdprob_row: ArrayView1<Real>,
-    fwdprob_first: ArrayView1<Real>,
-    fwdprob_norecom_row: ArrayView1<Real>,
-    sprob: ArrayView1<Real>,
-    sprob_first: ArrayView1<Real>,
-    sprob_norecom: ArrayView1<Real>,
+    fwdprob_row: Array1<Real>,
+    fwdprob_first: Array1<Real>,
+    fwdprob_norecom_row: Array1<Real>,
+    sprob: Array1<Real>,
+    sprob_first: Array1<Real>,
+    sprob_norecom: Array1<Real>,
 ) -> Real {
     let E = *_E;
     let combined = {
-        let x = &fwdprob_norecom_row * &sprob_norecom;
-        &jprob * &(x.clone() / (&fwdprob_first * &sprob_first + E))
-            + (&fwdprob_row * &sprob - x) / &clustsize
+        let x = fwdprob_norecom_row * sprob_norecom;
+        jprob * (x.clone() / (fwdprob_first * sprob_first + E))
+            + (fwdprob_row * sprob - x) / clustsize
     };
 
     #[cfg(not(feature = "leak-resistant"))]
@@ -483,3 +495,46 @@ fn impute(
     };
     p1 / (p1 + p0)
 }
+
+
+fn impute_all<O: OutputWrite<Real>>(
+    n_blocks: usize,
+    block_recv: Receiver<Block>,
+    sprob: Receiver<Array1<Real>>,
+    sprob_first: Receiver<Array1<Real>>,
+    sprob_norecom: Receiver<Array1<Real>>,
+    sprob_all: Receiver<Array1<Real>>,
+    mut fwdprob_cache: impl CacheLoad<Array2<Real>>,
+    mut fwdprob_first_cache: impl CacheLoad<Array1<Real>>,
+    mut fwdprob_norecom_cache: impl CacheLoad<Array2<Real>>,
+    mut fwdprob_all_cache: impl CacheLoad<Array1<Real>>,
+    mut output_writer: O,
+) -> O 
+{
+    for b in 0..n_blocks {
+        let block = block_recv.recv().unwrap();
+        let fwdprob = fwdprob_cache.pop().unwrap();
+        let fwdprob_norecom = fwdprob_norecom_cache.pop().unwrap();
+        let fwdprob_first = fwdprob_first_cache.pop().unwrap();
+        let fwdprob_all = fwdprob_all_cache.pop().unwrap();
+        let jprob = precompute_joint(&block, sprob_all.recv().unwrap(), fwdprob_all);
+
+        let first = if b == n_blocks - 1 { 0 } else { 1 };
+        // Walk
+        for j in (first..block.nvar).rev() {
+            output_writer.push(impute(
+                jprob.clone(),
+                block.clustsize.view(),
+                block.rhap[j].as_bitslice(),
+                fwdprob.row(j).to_owned(),
+                fwdprob_first.clone(),
+                fwdprob_norecom.row(j).to_owned(),
+                sprob.recv().unwrap(),
+                sprob_first.recv().unwrap(),
+                sprob_norecom.recv().unwrap(),
+            ));
+        }
+    }
+    output_writer
+}
+

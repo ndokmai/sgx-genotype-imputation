@@ -16,7 +16,7 @@ impl<B> OffloadNtCache<B> {
 
 impl<B> Cache for OffloadNtCache<B>
 where
-    B: CacheBackend,
+    B: CacheBackend + 'static,
     B::WriteBackend: Send + 'static,
     <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
 {
@@ -56,7 +56,7 @@ where
 impl<T, B> CacheSave<T> for OffloadNtCacheSave<T, B>
 where
     T: Send + 'static + Serialize + for<'de> Deserialize<'de>,
-    B: CacheBackend,
+    B: CacheBackend + 'static,
     B::WriteBackend: Send + 'static,
     <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
 {
@@ -85,7 +85,7 @@ pub struct OffloadNtCacheLoad<T, B: CacheBackend> {
 
 impl<T, B> CacheLoad<T> for OffloadNtCacheLoad<T, B>
 where
-    B: CacheBackend,
+    B: CacheBackend + 'static,
     T: Send + 'static + for<'de> Deserialize<'de>,
     <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
 {

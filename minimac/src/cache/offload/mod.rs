@@ -18,7 +18,7 @@ impl<B> OffloadCache<B> {
 
 impl<B> Cache for OffloadCache<B>
 where
-    B: CacheBackend,
+    B: CacheBackend + 'static,
     B::WriteBackend: Send + 'static,
     <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
 {
@@ -63,7 +63,7 @@ where
 impl<T, B> CacheSave<T> for OffloadCacheSave<T, B>
 where
     T: Send + 'static + Serialize + for<'de> Deserialize<'de>,
-    B: CacheBackend,
+    B: CacheBackend + 'static,
     B::WriteBackend: Send + 'static,
     <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
 {
@@ -146,7 +146,7 @@ where
 
 impl<T, B> CacheLoad<T> for OffloadCacheLoad<T, B>
 where
-    B: CacheBackend,
+    B: CacheBackend + 'static,
     T: Send + 'static + for<'de> Deserialize<'de>,
     <B::WriteBackend as CacheWriteBackend>::ReadBackend: Send + 'static,
 {

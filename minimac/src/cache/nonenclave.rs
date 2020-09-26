@@ -57,7 +57,7 @@ pub struct NonenclaveCacheLoad<T> {
 
 impl<T> CacheLoad<T> for NonenclaveCacheLoad<T>
 where
-    T: Send + for<'de> Deserialize<'de>,
+    T: Send + 'static + for<'de> Deserialize<'de>,
 {
     fn pop(&mut self) -> Option<T> {
         let buffer = self.inner.pop()?.0;

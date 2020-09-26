@@ -31,7 +31,7 @@ impl<T: Send + 'static + Serialize + for<'de> Deserialize<'de>> CacheSave<T> for
     }
 }
 
-pub struct LocalCacheLoad<T>(Vec<T>);
+pub struct LocalCacheLoad<T: Send + 'static>(Vec<T>);
 
 impl<T: Send + for<'de> Deserialize<'de>> CacheLoad<T> for LocalCacheLoad<T> {
     #[inline]

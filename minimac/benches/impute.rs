@@ -17,13 +17,13 @@ pub fn impute_bench(c: &mut Criterion) {
             let cache = LocalCache;
             let ref_panel = ref_panel.clone().into_reader();
             let (thap_ind, thap_dat) = input.clone().into_pair_iter();
-            let mut output_writer = OwnedOutputWriter::new();
-            impute_all(
+            let output_writer = OwnedOutputWriter::new();
+            minimac(
                 black_box(thap_ind),
                 black_box(thap_dat),
                 black_box(ref_panel),
                 black_box(cache),
-                black_box(&mut output_writer),
+                black_box(output_writer),
             )
         })
     });

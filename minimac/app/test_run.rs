@@ -51,12 +51,12 @@ fn main() {
     eprintln!("n_haps = {}", ref_panel.n_haps());
     eprintln!("n_markers = {}", ref_panel.n_markers());
 
-    let mut output_writer = OwnedOutputWriter::new();
+    let output_writer = OwnedOutputWriter::new();
 
     let cache = LocalCache;
 
     let now = std::time::Instant::now();
-    impute_all(thap_ind, thap_data, ref_panel, cache, &mut output_writer);
+    let output_writer = minimac(thap_ind, thap_data, ref_panel, cache, output_writer);
     eprintln!(
         "Imputation time = {} ms",
         (Instant::now() - now).as_millis()
