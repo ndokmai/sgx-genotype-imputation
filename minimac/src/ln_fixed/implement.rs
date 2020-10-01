@@ -1,5 +1,4 @@
-use super::fixed_inner::FixedInnerVisitor;
-use super::FixedInner;
+use super::*;
 use ndarray::{Array, ArrayBase, Data, Dimension, Zip};
 use paste::paste;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -9,16 +8,16 @@ use timing_shield::{TpBool, TpCondSwap, TpEq, TpOrd};
 use typenum::marker_traits::Unsigned;
 
 #[derive(Clone, Copy)]
-pub struct LnFixed<F: Unsigned>(FixedInner<F>);
+pub struct LnFixed<F: Unsigned>(FixedInner32<F>);
 
 impl<F: Unsigned> LnFixed<F> {
     //TODO remove this
-    pub const ONE: Self = Self(FixedInner::ZERO);
-    pub const NAN: Self = Self(FixedInner::NAN);
-    pub const EPS: Self = Self(FixedInner::leaky_from_f32(-69.0775527898)); // 1e-30
+    pub const ONE: Self = Self(FixedInner32::ZERO);
+    pub const NAN: Self = Self(FixedInner32::NAN);
+    pub const EPS: Self = Self(FixedInner32::leaky_from_f32(-69.0775527898)); // 1e-30
 
     pub fn leaky_from_f32(f: f32) -> Self {
-        Self(FixedInner::leaky_from_f32(f.ln()))
+        Self(FixedInner32::leaky_from_f32(f.ln()))
     }
 
     pub fn sum_in_place(slice: &mut [Self]) -> Self {
@@ -37,8 +36,8 @@ impl<F: Unsigned> LnFixed<F> {
         return Self::sum_in_place(&mut slice[..first_half_len]);
     }
 
-    pub fn leaky_from_i64(i: i64) -> Self {
-        Self(FixedInner::leaky_from_f32((i as f32).ln()))
+    pub fn leaky_from_i32(i: i32) -> Self {
+        Self(FixedInner32::leaky_from_f32((i as f32).ln()))
     }
 
     pub fn leaky_into_f32(self) -> f32 {
@@ -60,7 +59,7 @@ impl<F: Unsigned> LnFixed<F> {
         a01: f32,
         a00: f32,
     ) -> Self {
-        Self(FixedInner::<F>::select_from_4_f32(
+        Self(FixedInner32::<F>::select_from_4_f32(
             cond0,
             cond1,
             a11.ln(),
@@ -73,7 +72,7 @@ impl<F: Unsigned> LnFixed<F> {
 
 impl<F: Unsigned> From<u16> for LnFixed<F> {
     fn from(u: u16) -> Self {
-        Self::leaky_from_i64(u as i64)
+        Self::leaky_from_i32(u as i32)
     }
 }
 
@@ -162,7 +161,7 @@ impl_all_ord! { Self, _none }
 impl<F: Unsigned> TpCondSwap for LnFixed<F> {
     #[inline]
     fn tp_cond_swap(condition: TpBool, a: &mut Self, b: &mut Self) {
-        FixedInner::<F>::tp_cond_swap(condition, &mut a.0, &mut b.0);
+        FixedInner32::<F>::tp_cond_swap(condition, &mut a.0, &mut b.0);
     }
 }
 
@@ -248,15 +247,15 @@ impl<'de, F: Unsigned> serde::de::Visitor<'de> for LnFixedVisitor<F> {
     type Value = LnFixed<F>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("Error serializing FixedInner")
+        formatter.write_str("Error serializing FixedInner32")
     }
 
-    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+    fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        FixedInnerVisitor::<F>(PhantomData)
-            .visit_u64(value)
+        FixedInner32Visitor::<F>(PhantomData)
+            .visit_u32(value)
             .map(|v| LnFixed(v))
     }
 }
@@ -266,7 +265,7 @@ impl<'de, F: Unsigned> Deserialize<'de> for LnFixed<F> {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_u64(LnFixedVisitor::<F>(PhantomData))
+        deserializer.deserialize_u32(LnFixedVisitor::<F>(PhantomData))
     }
 }
 

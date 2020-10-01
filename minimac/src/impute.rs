@@ -35,8 +35,7 @@ pub fn minimac<O: OutputWrite<Real> + Send + 'static>(
     mut ref_panel: impl RefPanelRead,
     mut cache: impl Cache,
     output_writer: O,
-) -> O
-{
+) -> O {
     let m = ref_panel.n_haps();
     let m_real: Real = u16::try_from(m).unwrap().into();
     let n_blocks = ref_panel.n_blocks();
@@ -131,7 +130,6 @@ pub fn minimac<O: OutputWrite<Real> + Send + 'static>(
                 },
             );
 
-
         // Skip last block
         if b < n_blocks - 1 {
             let sprob_recom = sprob - sprob_norecom.clone();
@@ -173,7 +171,7 @@ pub fn minimac<O: OutputWrite<Real> + Send + 'static>(
     let (sprod_norecomb_send, sprob_norecom_recv) = bounded(bound);
     let (sprod_all_send, sprob_all_recv) = bounded(bound);
 
-    let handle = std::thread::spawn(move || 
+    let handle = std::thread::spawn(move || {
         impute_all(
             n_blocks,
             block_recv,
@@ -187,7 +185,7 @@ pub fn minimac<O: OutputWrite<Real> + Send + 'static>(
             fwdprob_all_cache,
             output_writer,
         )
-    );
+    });
 
     for b in (0..n_blocks).rev() {
         let block = block_cache.pop().unwrap();
@@ -424,22 +422,16 @@ fn precompute_joint(
     #[cfg(not(feature = "leak-resistant"))]
     {
         let mut jprob = Array1::<Real>::zeros(block.nuniq);
-        Zip::from(&block.indmap)
-            .and(&precomp)
-            .apply(|&ind, p| {
-                jprob[ind as usize] += p;
-            });
+        Zip::from(&block.indmap).and(&precomp).apply(|&ind, p| {
+            jprob[ind as usize] += p;
+        });
         jprob
     }
 
     #[cfg(feature = "leak-resistant")]
     {
         let mut jprob = vec![Vec::with_capacity(20); block.nuniq];
-        for (&ind, &p) in block
-            .indmap
-            .iter()
-            .zip(precomp.into_iter())
-        {
+        for (&ind, &p) in block.indmap.iter().zip(precomp.into_iter()) {
             jprob[ind as usize].push(p);
         }
         Array1::from(
@@ -497,7 +489,6 @@ fn impute(
     p1 / (p1 + p0)
 }
 
-
 fn impute_all<O: OutputWrite<Real>>(
     n_blocks: usize,
     block_recv: Receiver<Block>,
@@ -510,8 +501,7 @@ fn impute_all<O: OutputWrite<Real>>(
     mut fwdprob_norecom_cache: impl CacheLoad<Array2<Real>>,
     mut fwdprob_all_cache: impl CacheLoad<Array1<Real>>,
     mut output_writer: O,
-) -> O 
-{
+) -> O {
     for b in 0..n_blocks {
         let block = block_recv.recv().unwrap();
         let fwdprob = fwdprob_cache.pop().unwrap();
@@ -538,4 +528,3 @@ fn impute_all<O: OutputWrite<Real>>(
     }
     output_writer
 }
-
