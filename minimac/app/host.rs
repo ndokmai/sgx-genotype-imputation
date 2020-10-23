@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 use std::str::FromStr;
 
-const REF_FILE: &'static str = "test_data/largeref.m3vcf";
+const REF_FILE: &'static str = "test_data/largeref.m3vcf.gz";
 
 fn exit_print(name: &str) {
     eprintln!("Usage: {} <reference panel file>", name);

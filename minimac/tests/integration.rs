@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 
-const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf";
+const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf.gz";
 const INPUT_IND_FILE: &'static str = "test_data/small_input_ind.txt";
 const INPUT_DAT_FILE: &'static str = "test_data/small_input_dat.txt";
 const N_IND: usize = 936;

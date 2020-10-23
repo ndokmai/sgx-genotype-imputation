@@ -8,7 +8,7 @@ use std::writeln;
 
 const INPUT_IND_FILE: &'static str = "test_data/large_input_ind.txt";
 const INPUT_DAT_FILE: &'static str = "test_data/large_input_dat.txt";
-const REF_FILE: &'static str = "test_data/largeref.m3vcf";
+const REF_FILE: &'static str = "test_data/largeref.m3vcf.gz";
 const OUTPUT_FILE: &'static str = "output.txt";
 
 fn exit_print(name: &str) {

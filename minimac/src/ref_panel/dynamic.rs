@@ -1,23 +1,24 @@
 use super::*;
 use crate::ref_panel::Block;
 use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
+use crossbeam::{bounded, Receiver, Sender};
+use flate2::read::GzDecoder;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind, Lines, Read, Result};
 use std::path::Path;
-//use std::sync::mpsc::{sync_channel, Receiver};
-use crossbeam::{bounded, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 pub struct RefPanelWriter {
     n_haps: usize,
     n_markers: usize,
     n_blocks: usize,
-    block_lines: Lines<BufReader<File>>,
+    block_lines: Lines<BufReader<GzDecoder<File>>>,
 }
 
 impl RefPanelWriter {
     pub fn new(ref_panel_path: &Path) -> Self {
         let f = File::open(ref_panel_path).expect("Unable to open reference file");
+        let f = GzDecoder::new(f);
         let f = BufReader::new(f);
 
         let mut lines_iter = f.lines();

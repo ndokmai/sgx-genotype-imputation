@@ -1,6 +1,7 @@
 use super::*;
 use crate::block::Block;
 use byteorder::{NetworkEndian, WriteBytesExt};
+use flate2::read::GzDecoder;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind, Result, Write};
 use std::path::Path;
@@ -15,6 +16,7 @@ pub struct OwnedRefPanelWriter {
 impl OwnedRefPanelWriter {
     pub fn load(ref_panel_path: &Path) -> Self {
         let f = File::open(ref_panel_path).expect("Unable to open reference file");
+        let f = GzDecoder::new(f);
         let f = BufReader::new(f);
 
         let mut lines_iter = f.lines();
