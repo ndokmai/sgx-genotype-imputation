@@ -9,6 +9,7 @@ edition = "2018"
 [features]
 default = ["minimac"]
 leak-resistant = ["minimac_resistant"]
+sim-mem-measure = []
 
 [dependencies]
 minimac = { path = "../minimac", optional = true }

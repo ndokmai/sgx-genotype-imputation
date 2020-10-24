@@ -60,9 +60,13 @@ fn main() {
     
     //let cache = OffloadCache::new(100, FileCacheBackend);
     
+    #[cfg(any(all(target_env = "sgx", target_vendor = "fortanix"), feature="sim-mem-measure"))]
     let cache = LocalCache;
 
-    eprintln!("Server: connected to CacheServer");
+    #[cfg(all(not(all(target_env = "sgx", target_vendor = "fortanix")), not(feature="sim-mem-measure")))]
+    let cache = OffloadCache::new(100, FileCacheBackend);
+
+    //eprintln!("Server: connected to CacheServer");
 
     let output_writer =
         LazyStreamOutputWriter::new(ref_panel_reader.n_markers(), client_stream);

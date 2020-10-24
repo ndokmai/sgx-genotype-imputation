@@ -31,7 +31,7 @@ fn main() {
     } else if args.len() != 4 {
         return exit_print(&args[0]);
     } else {
-        eprintln!("Clinet: Using command line parameters: ");
+        eprintln!("Client: Using command line parameters: ");
         ind_file = args[1].as_str();
         dat_file = args[2].as_str();
         output_file = args[3].as_str();
