@@ -1,4 +1,4 @@
-# sgx-genotype-imputation
+# SMac: Genotype Imputation in Intel SGX
 ## Requirements
 - Ubuntu 16.04/18.04
 - [Rust](https://www.rust-lang.org/tools/install)
