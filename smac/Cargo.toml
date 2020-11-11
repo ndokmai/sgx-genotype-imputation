@@ -1,5 +1,5 @@
 [package]
-name = "minimac"
+name = "smac"
 version = "0.1.0"
 authors = ["Ko Dokmai <natnatee.dokmai@gmail.com>","Hoon Cho <hcho06@gmail.com>"]
 edition = "2018"
@@ -8,7 +8,7 @@ default-run = "test_run"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = []
+default = ["leak-resistant"]
 leak-resistant = ["paste", "typenum", "timing-shield"]
 
 [dependencies]

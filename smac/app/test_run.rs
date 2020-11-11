@@ -1,4 +1,4 @@
-use minimac::*;
+use smac::*;
 use std::env;
 use std::fs::File;
 use std::io::Write;
@@ -56,7 +56,7 @@ fn main() {
     let cache = LocalCache;
 
     let now = std::time::Instant::now();
-    let output_writer = minimac(thap_ind, thap_data, ref_panel, cache, output_writer);
+    let output_writer = smac(thap_ind, thap_data, ref_panel, cache, output_writer);
     eprintln!(
         "Imputation time = {} ms",
         (Instant::now() - now).as_millis()

@@ -1,4 +1,4 @@
-use minimac::*;
+use smac::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
@@ -69,7 +69,7 @@ fn integration_test() {
     let (thap_ind, thap_dat) = InputReader::new(50, input_stream1.clone()).into_pair_iter();
     let cache = OffloadCache::new(50, EncryptedCacheBackend::new(TcpCacheBackend::new(addr)));
     let output_writer = LazyStreamOutputWriter::new(n_markers, input_stream1);
-    minimac(thap_ind, thap_dat, ref_panel_reader, cache, output_writer);
+    smac(thap_ind, thap_dat, ref_panel_reader, cache, output_writer);
 
     let imputed = handle.join().unwrap();
     let ref_imputed = load_ref_output();

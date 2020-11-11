@@ -1,5 +1,5 @@
 use bufstream::BufStream;
-use minimac::*;
+use smac::*;
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -8,8 +8,8 @@ use std::path::Path;
 use std::str::FromStr;
 use std::writeln;
 
-const INPUT_IND_FILE: &'static str = "input_ind.txt";
-const INPUT_DAT_FILE: &'static str = "input_dat.txt";
+const INPUT_IND_FILE: &'static str = "test_data/large_input_ind.txt";
+const INPUT_DAT_FILE: &'static str = "test_data/large_input_dat.txt";
 const OUTPUT_FILE: &'static str = "output.txt";
 
 fn exit_print(name: &str) {

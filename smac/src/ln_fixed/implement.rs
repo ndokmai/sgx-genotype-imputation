@@ -8,16 +8,16 @@ use timing_shield::{TpBool, TpCondSwap, TpEq, TpOrd};
 use typenum::marker_traits::Unsigned;
 
 #[derive(Clone, Copy)]
-pub struct LnFixed<F: Unsigned>(FixedInner32<F>);
+pub struct TpLnFixed<F: Unsigned>(TpFixedInner32<F>);
 
-impl<F: Unsigned> LnFixed<F> {
+impl<F: Unsigned> TpLnFixed<F> {
     //TODO remove this
-    pub const ONE: Self = Self(FixedInner32::ZERO);
-    pub const NAN: Self = Self(FixedInner32::NAN);
-    pub const EPS: Self = Self(FixedInner32::leaky_from_f32(-69.0775527898)); // 1e-30
+    pub const ONE: Self = Self(TpFixedInner32::ZERO);
+    pub const NAN: Self = Self(TpFixedInner32::NAN);
+    pub const EPS: Self = Self(TpFixedInner32::leaky_from_f32(-69.0775527898)); // 1e-30
 
     pub fn leaky_from_f32(f: f32) -> Self {
-        Self(FixedInner32::leaky_from_f32(f.ln()))
+        Self(TpFixedInner32::leaky_from_f32(f.ln()))
     }
 
     pub fn sum_in_place(slice: &mut [Self]) -> Self {
@@ -37,7 +37,7 @@ impl<F: Unsigned> LnFixed<F> {
     }
 
     pub fn leaky_from_i32(i: i32) -> Self {
-        Self(FixedInner32::leaky_from_f32((i as f32).ln()))
+        Self(TpFixedInner32::leaky_from_f32((i as f32).ln()))
     }
 
     pub fn leaky_into_f32(self) -> f32 {
@@ -59,7 +59,7 @@ impl<F: Unsigned> LnFixed<F> {
         a01: f32,
         a00: f32,
     ) -> Self {
-        Self(FixedInner32::<F>::select_from_4_f32(
+        Self(TpFixedInner32::<F>::select_from_4_f32(
             cond0,
             cond1,
             a11.ln(),
@@ -70,19 +70,19 @@ impl<F: Unsigned> LnFixed<F> {
     }
 }
 
-impl<F: Unsigned> From<u16> for LnFixed<F> {
+impl<F: Unsigned> From<u16> for TpLnFixed<F> {
     fn from(u: u16) -> Self {
         Self::leaky_from_i32(u as i32)
     }
 }
 
-impl<F: Unsigned> From<f32> for LnFixed<F> {
+impl<F: Unsigned> From<f32> for TpLnFixed<F> {
     fn from(f: f32) -> Self {
         Self::leaky_from_f32(f)
     }
 }
 
-impl<F: Unsigned> Into<f32> for LnFixed<F> {
+impl<F: Unsigned> Into<f32> for TpLnFixed<F> {
     fn into(self) -> f32 {
         self.leaky_into_f32()
     }
@@ -91,7 +91,7 @@ impl<F: Unsigned> Into<f32> for LnFixed<F> {
 macro_rules! impl_arith {
     ($op_name: expr, $op: expr,  $trt: path) => {
         paste! {
-            impl<F: Unsigned> std::ops::$trt for LnFixed<F> {
+            impl<F: Unsigned> std::ops::$trt for TpLnFixed<F> {
                 type Output = Self;
                 #[inline]
                 fn $op_name(self, other: Self) -> Self {
@@ -99,20 +99,20 @@ macro_rules! impl_arith {
                 }
             }
 
-            impl<F: Unsigned> std::ops::[<$trt Assign>] for LnFixed<F> {
+            impl<F: Unsigned> std::ops::[<$trt Assign>] for TpLnFixed<F> {
                 #[inline]
                 fn [<$op_name _assign>](&mut self, other: Self) {
                     self.0 = self.0.$op(other.0);
                 }
             }
 
-            impl<'a, S, D, F> std::ops::$trt<&'a ArrayBase<S, D>> for LnFixed<F>
+            impl<'a, S, D, F> std::ops::$trt<&'a ArrayBase<S, D>> for TpLnFixed<F>
                 where
-                    S: Data<Elem = LnFixed<F>>,
+                    S: Data<Elem = TpLnFixed<F>>,
                     D: Dimension,
                     F: Unsigned,
                     {
-                        type Output = Array<LnFixed<F>, D>;
+                        type Output = Array<TpLnFixed<F>, D>;
                         fn $op_name(self, rhs: &ArrayBase<S, D>) -> Self::Output {
                             let mut out = rhs.to_owned();
                             Zip::from(&mut out)
@@ -141,12 +141,12 @@ macro_rules! impl_ord_none {
 macro_rules! impl_all_ord {
     ($in: ident, $ext: ident) => {
         paste! {
-            impl<F: Unsigned> TpEq<$in> for LnFixed<F> {
+            impl<F: Unsigned> TpEq<$in> for TpLnFixed<F> {
                 [<impl_ord $ext>]! {tp_eq, $in}
                 [<impl_ord $ext>]! {tp_not_eq, $in}
             }
 
-            impl<F: Unsigned> TpOrd<$in> for LnFixed<F> {
+            impl<F: Unsigned> TpOrd<$in> for TpLnFixed<F> {
                 [<impl_ord $ext>]! {tp_lt, $in}
                 [<impl_ord $ext>]! {tp_lt_eq, $in}
                 [<impl_ord $ext>]! {tp_gt, $in}
@@ -158,21 +158,21 @@ macro_rules! impl_all_ord {
 
 impl_all_ord! { Self, _none }
 
-impl<F: Unsigned> TpCondSwap for LnFixed<F> {
+impl<F: Unsigned> TpCondSwap for TpLnFixed<F> {
     #[inline]
     fn tp_cond_swap(condition: TpBool, a: &mut Self, b: &mut Self) {
-        FixedInner32::<F>::tp_cond_swap(condition, &mut a.0, &mut b.0);
+        TpFixedInner32::<F>::tp_cond_swap(condition, &mut a.0, &mut b.0);
     }
 }
 
-impl<F: Unsigned> std::fmt::Display for LnFixed<F> {
+impl<F: Unsigned> std::fmt::Display for TpLnFixed<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let i: f32 = (*self).leaky_into_f32();
         i.fmt(f)
     }
 }
 
-impl<F: Unsigned> num_traits::identities::Zero for LnFixed<F> {
+impl<F: Unsigned> num_traits::identities::Zero for TpLnFixed<F> {
     fn zero() -> Self {
         panic!("This should never be called!");
     }
@@ -182,25 +182,25 @@ impl<F: Unsigned> num_traits::identities::Zero for LnFixed<F> {
     }
 }
 
-impl<F: Unsigned> num_traits::identities::One for LnFixed<F> {
+impl<F: Unsigned> num_traits::identities::One for TpLnFixed<F> {
     fn one() -> Self {
         Self::ONE
     }
 }
 
-impl<F: Unsigned + 'static> ndarray::ScalarOperand for LnFixed<F> {}
+impl<F: Unsigned + 'static> ndarray::ScalarOperand for TpLnFixed<F> {}
 
-impl<F: Unsigned> std::iter::Sum<LnFixed<F>> for LnFixed<F> {
+impl<F: Unsigned> std::iter::Sum<TpLnFixed<F>> for TpLnFixed<F> {
     fn sum<I>(mut iter: I) -> Self
     where
-        I: Iterator<Item = LnFixed<F>>,
+        I: Iterator<Item = TpLnFixed<F>>,
     {
         let first_pair = match iter.next() {
             Some(first) => match iter.next() {
                 Some(second) => first + second,
                 None => return first,
             },
-            None => return LnFixed::EPS,
+            None => return TpLnFixed::EPS,
         };
         let mut accu = Vec::with_capacity(20);
         accu.push(first_pair);
@@ -223,16 +223,16 @@ impl<F: Unsigned> std::iter::Sum<LnFixed<F>> for LnFixed<F> {
     }
 }
 
-impl<'a, F: Unsigned + 'static> std::iter::Sum<&'a LnFixed<F>> for LnFixed<F> {
+impl<'a, F: Unsigned + 'static> std::iter::Sum<&'a TpLnFixed<F>> for TpLnFixed<F> {
     fn sum<I>(iter: I) -> Self
     where
-        I: Iterator<Item = &'a LnFixed<F>>,
+        I: Iterator<Item = &'a TpLnFixed<F>>,
     {
         iter.cloned().sum::<Self>()
     }
 }
 
-impl<F: Unsigned> Serialize for LnFixed<F> {
+impl<F: Unsigned> Serialize for TpLnFixed<F> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -241,31 +241,31 @@ impl<F: Unsigned> Serialize for LnFixed<F> {
     }
 }
 
-struct LnFixedVisitor<F>(PhantomData<F>);
+struct TpLnFixedVisitor<F>(PhantomData<F>);
 
-impl<'de, F: Unsigned> serde::de::Visitor<'de> for LnFixedVisitor<F> {
-    type Value = LnFixed<F>;
+impl<'de, F: Unsigned> serde::de::Visitor<'de> for TpLnFixedVisitor<F> {
+    type Value = TpLnFixed<F>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("Error serializing FixedInner32")
+        formatter.write_str("Error serializing TpFixedInner32")
     }
 
     fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        FixedInner32Visitor::<F>(PhantomData)
+        TpFixedInner32Visitor::<F>(PhantomData)
             .visit_u32(value)
-            .map(|v| LnFixed(v))
+            .map(|v| TpLnFixed(v))
     }
 }
 
-impl<'de, F: Unsigned> Deserialize<'de> for LnFixed<F> {
+impl<'de, F: Unsigned> Deserialize<'de> for TpLnFixed<F> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_u32(LnFixedVisitor::<F>(PhantomData))
+        deserializer.deserialize_u32(TpLnFixedVisitor::<F>(PhantomData))
     }
 }
 
@@ -273,7 +273,7 @@ impl<'de, F: Unsigned> Deserialize<'de> for LnFixed<F> {
 mod tests {
     use super::*;
 
-    type F = LnFixed<typenum::U20>;
+    type F = TpLnFixed<typenum::U20>;
 
     #[test]
     fn conversion_test() {

@@ -1,4 +1,4 @@
-use minimac::*;
+use smac::*;
 use std::env;
 use std::io::BufWriter;
 use std::net::SocketAddr;

@@ -95,12 +95,12 @@ macro_rules! impl_approx {
 
 /// Fixed in regular (no log) space. For internal use only.
 #[derive(Clone, Copy)]
-pub struct FixedInner64<F: Unsigned> {
+pub struct TpFixedInner64<F: Unsigned> {
     inner: TpI64,
     _phantom: PhantomData<F>,
 }
 
-impl<F: Unsigned> FixedInner64<F> {
+impl<F: Unsigned> TpFixedInner64<F> {
     pub const ZERO: Self = new_self_raw!(0i64);
     pub const NAN: Self = new_self_raw!(i64::MAX);
 
@@ -177,8 +177,8 @@ impl<F: Unsigned> FixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> From<FixedInner32<F>> for FixedInner64<F> {
-    fn from(v: FixedInner32<F>) -> Self {
+impl<F: Unsigned> From<TpFixedInner32<F>> for TpFixedInner64<F> {
+    fn from(v: TpFixedInner32<F>) -> Self {
         new_self!(v.into_inner().as_i64())
     }
 }
@@ -186,14 +186,14 @@ impl<F: Unsigned> From<FixedInner32<F>> for FixedInner64<F> {
 macro_rules! impl_arith {
     ($op: ident, $trait: ident) => {
         paste! {
-            impl<F: Unsigned> std::ops::$trait for FixedInner64<F> {
+            impl<F: Unsigned> std::ops::$trait for TpFixedInner64<F> {
                 type Output = Self;
                 #[inline]
                 fn $op(self, rhs: Self) -> Self::Output {
                     new_self!(self.inner.$op(rhs.inner))
                 }
             }
-            impl<F: Unsigned> std::ops::[<$trait Assign>] for FixedInner64<F> {
+            impl<F: Unsigned> std::ops::[<$trait Assign>] for TpFixedInner64<F> {
                 #[inline]
                 fn [<$op _assign>](&mut self, rhs: Self) {
                     self.inner.[<$op _assign>](rhs.inner);
@@ -206,14 +206,14 @@ macro_rules! impl_arith {
 macro_rules! impl_arith_rhs {
     ($op: ident, $trait: ident, $rhs: ident) => {
         paste! {
-            impl<F: Unsigned> std::ops::$trait<$rhs> for FixedInner64<F> {
+            impl<F: Unsigned> std::ops::$trait<$rhs> for TpFixedInner64<F> {
                 type Output = Self;
                 #[inline]
                 fn $op(self, rhs: $rhs) -> Self::Output {
                     new_self!(self.inner.$op(rhs))
                 }
             }
-            impl<F: Unsigned> std::ops::[<$trait Assign>]<$rhs> for FixedInner64<F> {
+            impl<F: Unsigned> std::ops::[<$trait Assign>]<$rhs> for TpFixedInner64<F> {
                 #[inline]
                 fn [<$op _assign>](&mut self, rhs: $rhs) {
                     self.inner.[<$op _assign>](rhs);
@@ -228,7 +228,7 @@ impl_arith! {sub, Sub}
 impl_arith_rhs! {shr, Shr, u32}
 impl_arith_rhs! {shl, Shl, u32}
 
-impl<F: Unsigned> std::ops::Neg for FixedInner64<F> {
+impl<F: Unsigned> std::ops::Neg for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self::Output {
@@ -236,7 +236,7 @@ impl<F: Unsigned> std::ops::Neg for FixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> std::ops::Mul for FixedInner64<F> {
+impl<F: Unsigned> std::ops::Mul for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
@@ -244,14 +244,14 @@ impl<F: Unsigned> std::ops::Mul for FixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> std::ops::MulAssign for FixedInner64<F> {
+impl<F: Unsigned> std::ops::MulAssign for TpFixedInner64<F> {
     #[inline]
     fn mul_assign(&mut self, rhs: Self) {
         *self = *self * rhs;
     }
 }
 
-impl<F: Unsigned> std::ops::Mul<i64> for FixedInner64<F> {
+impl<F: Unsigned> std::ops::Mul<i64> for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: i64) -> Self::Output {
@@ -259,7 +259,7 @@ impl<F: Unsigned> std::ops::Mul<i64> for FixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> std::ops::Mul<TpI64> for FixedInner64<F> {
+impl<F: Unsigned> std::ops::Mul<TpI64> for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: TpI64) -> Self::Output {
@@ -267,14 +267,14 @@ impl<F: Unsigned> std::ops::Mul<TpI64> for FixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> std::ops::MulAssign<TpI64> for FixedInner64<F> {
+impl<F: Unsigned> std::ops::MulAssign<TpI64> for TpFixedInner64<F> {
     #[inline]
     fn mul_assign(&mut self, rhs: TpI64) {
         self.inner *= rhs;
     }
 }
 
-impl<F: Unsigned> std::ops::BitAnd<TpI64> for FixedInner64<F> {
+impl<F: Unsigned> std::ops::BitAnd<TpI64> for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn bitand(self, rhs: TpI64) -> Self::Output {
@@ -303,12 +303,12 @@ macro_rules! impl_ord_rhs {
 macro_rules! impl_all_ord {
     ($in: ident, $ext: ident) => {
         paste! {
-            impl<F: Unsigned> TpEq<$in> for FixedInner64<F> {
+            impl<F: Unsigned> TpEq<$in> for TpFixedInner64<F> {
                 [<impl_ord $ext>]! {tp_eq, $in}
                 [<impl_ord $ext>]! {tp_not_eq, $in}
             }
 
-            impl<F: Unsigned> TpOrd<$in> for FixedInner64<F> {
+            impl<F: Unsigned> TpOrd<$in> for TpFixedInner64<F> {
                 [<impl_ord $ext>]! {tp_lt, $in}
                 [<impl_ord $ext>]! {tp_lt_eq, $in}
                 [<impl_ord $ext>]! {tp_gt, $in}
@@ -321,7 +321,7 @@ macro_rules! impl_all_ord {
 impl_all_ord! { i64, _rhs }
 impl_all_ord! { Self, _none }
 
-impl<F: Unsigned> TpCondSwap for FixedInner64<F> {
+impl<F: Unsigned> TpCondSwap for TpFixedInner64<F> {
     #[inline]
     fn tp_cond_swap(condition: TpBool, a: &mut Self, b: &mut Self) {
         TpI64::tp_cond_swap(condition, &mut a.inner, &mut b.inner);
@@ -387,7 +387,7 @@ mod ome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    type F = FixedInner64<typenum::U20>;
+    type F = TpFixedInner64<typenum::U20>;
 
     #[test]
     fn conversion_test() {

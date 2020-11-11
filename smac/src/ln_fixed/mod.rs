@@ -4,4 +4,4 @@ mod fixed_inner_64;
 mod implement;
 use fixed_inner_32::*;
 use fixed_inner_64::*;
-pub use implement::LnFixed;
+pub use implement::TpLnFixed;

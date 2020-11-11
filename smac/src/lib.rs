@@ -40,7 +40,7 @@ mod inner {
 #[cfg(feature = "leak-resistant")]
 mod inner {
     use super::*;
-    pub type Real = ln_fixed::LnFixed<typenum::U20>;
+    pub type Real = ln_fixed::TpLnFixed<typenum::U20>;
     pub type Input = timing_shield::TpI8;
 }
 

@@ -6,7 +6,7 @@ source $SCRIPT_PATH/../settings.sh
 
 export RUSTFLAGS="$RUSTFLAGS"
 
-cd $RUST_MINIMAC_DIR && cargo build --release
+cd $RUST_SMAC_DIR && cargo build --release --no-default-features
 
-cd $RUST_SERVER_DIR && cargo build --release
+cd $RUST_SP_DIR && cargo build --release --no-default-features --features smac-lite
 

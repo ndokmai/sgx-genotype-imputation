@@ -1,8 +1,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use minimac::*;
+use smac::*;
 use std::path::Path;
 
-const REF_PANEL_FILE: &'static str = "test_data/largeref.m3vcf";
+const REF_PANEL_FILE: &'static str = "test_data/largeref.m3vcf.gz";
 const INPUT_IND_FILE: &'static str = "test_data/large_input_ind.txt";
 const INPUT_DAT_FILE: &'static str = "test_data/large_input_dat.txt";
 
@@ -18,7 +18,7 @@ pub fn impute_bench(c: &mut Criterion) {
             let ref_panel = ref_panel.clone().into_reader();
             let (thap_ind, thap_dat) = input.clone().into_pair_iter();
             let output_writer = OwnedOutputWriter::new();
-            minimac(
+            smac(
                 black_box(thap_ind),
                 black_box(thap_dat),
                 black_box(ref_panel),

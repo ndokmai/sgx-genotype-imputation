@@ -29,7 +29,7 @@ lazy_static! {
     static ref _E: Real = __E.into();
 }
 
-pub fn minimac<O: OutputWrite<Real> + Send + 'static>(
+pub fn smac<O: OutputWrite<Real> + Send + 'static>(
     mut thap_ind: impl Iterator<Item = bool>,
     mut thap_dat: impl Iterator<Item = Input>,
     mut ref_panel: impl RefPanelRead,
