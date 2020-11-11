@@ -1,5 +1,13 @@
 #!/bin/bash
 
+REF_PANEL=$1
+
+function help_msg {
+    echo "Usage: $0 <reference panel m3vcf.gz>";
+}
+
+[[ -z "$REF_PANEL" ]] && { help_msg ; exit 1; }
+
 if [[ $LITE -eq 1 ]]
 then
     SMAC_FLAGS="--no-default-features"
@@ -15,16 +23,10 @@ export RUSTFLAGS="-Ctarget-cpu=native -Ctarget-feature=+aes,+avx,+avx2,+sse2,+ss
 
 (cd smac && cargo +nightly build --release $SMAC_FLAGS) &&
     (cd service-provider && cargo +nightly build --release $SP_FLAGS) &&
-
-(
-cd smac
-cargo +nightly run -q --release $SMAC_FLAGS --bin host -- test_data/largeref.m3vcf.gz &
-cd ..
-
-cd service-provider
-cargo +nightly run -q --release $SP_FLAGS &
-cd ..
-
-cd smac
-cargo +nightly run -q --release $SMAC_FLAGS --bin client -- 127.0.0.1 test_data/large_input_ind.txt test_data/large_input_dat.txt output.txt
+    (
+    # start host
+    smac/target/release/host $REF_PANEL &
+    cd service-provider
+    # start service provider
+    cargo +nightly run -q --release $SP_FLAGS
 )
