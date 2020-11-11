@@ -11,18 +11,18 @@ fi
 
 export RUSTFLAGS="-Ctarget-cpu=native -Ctarget-feature=+aes,+avx,+avx2,+sse2,+sse4.1,+ssse3"
 
-(cd smac && cargo build --release $SMAC_FLAGS) &&
-    (cd service-provider && cargo build --release $SP_FLAGS) &&
+(cd smac && cargo +nightly build --release $SMAC_FLAGS) &&
+    (cd service-provider && cargo +nightly build --release $SP_FLAGS) &&
 
 (
 cd smac
-cargo run -q --release $SMAC_FLAGS --bin host &
+cargo +nightly run -q --release $SMAC_FLAGS --bin host -- test_data/largeref.m3vcf.gz &
 cd ..
 
 cd service-provider
-cargo run -q --release $SP_FLAGS &
+cargo +nightly run -q --release $SP_FLAGS &
 cd ..
 
 cd smac
-cargo run -q --release $SMAC_FLAGS --bin client
+cargo +nightly run -q --release $SMAC_FLAGS --bin client -- 127.0.0.1 test_data/large_input_ind.txt test_data/large_input_dat.txt output.txt
 )
