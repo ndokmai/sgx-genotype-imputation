@@ -74,3 +74,7 @@ For example,
 
 The output of SMac is a text file including the imputed alternative allele dosages at every
 genetic position covered by the reference panel M3VCF file (one number per line).
+
+## Contact for questions
+Ko Dokmai, ndokmai@iu.edu
+Hoon Cho, hhcho@broadinstitute.org
