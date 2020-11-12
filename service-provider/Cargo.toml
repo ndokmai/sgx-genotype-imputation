@@ -8,14 +8,19 @@ edition = "2018"
 
 [features]
 default = ["smac"]
+#default = ["smac", "remote-attestation"]
 smac-lite = ["smac_lite"]
 sim-mem-measure = []
+#remote-attestation = ["ra-enclave"]
 
 [dependencies]
 smac_lite = { package = "smac", path = "../smac", default-features = false, optional = true }
 smac = { path = "../smac", optional = true }
 bufstream = "0.1"
 rayon = "1.4"
+
+#[target.'cfg(target_env = "sgx")'.dependencies]
+#ra-enclave = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", optional = true }
 
 [package.metadata.fortanix-sgx]
 # stack size (in bytes) for each thread, the default stack size is 0x20000.

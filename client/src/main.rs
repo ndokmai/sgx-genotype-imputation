@@ -1,5 +1,8 @@
 use bufstream::BufStream;
+#[cfg(not(feature = "smac-lite"))]
 use smac::*;
+#[cfg(feature = "smac-lite")]
+use smac_lite::*;
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
@@ -10,8 +13,8 @@ use std::writeln;
 
 const SP_IP_ADDR: &'static str = "127.0.0.1";
 const SP_PORT: u16 = 7778;
-const INPUT_IND_FILE: &'static str = "test_data/large_input_ind.txt";
-const INPUT_DAT_FILE: &'static str = "test_data/large_input_dat.txt";
+const INPUT_IND_FILE: &'static str = "../smac/test_data/large_input_ind.txt";
+const INPUT_DAT_FILE: &'static str = "../smac/test_data/large_input_dat.txt";
 const OUTPUT_FILE: &'static str = "output.txt";
 
 fn exit_print(name: &str) {

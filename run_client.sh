@@ -13,11 +13,11 @@ function help_msg {
 
 if [[ $LITE -eq 1 ]]
 then
-    SMAC_FLAGS="--no-default-features"
+    CLIENT_FLAGS="--features smac-lite --no-default-features"
 fi
 
 export RUSTFLAGS="-Ctarget-cpu=native -Ctarget-feature=+aes,+avx,+avx2,+sse2,+sse4.1,+ssse3"
 
-(cd smac && cargo +nightly build --release $SMAC_FLAGS) &&
+(cd client && cargo +nightly build --release $CLIENT_FLAGS) &&
     # start client
-    smac/target/release/client $SP_IP $INPUT_IDX $INPUT_DATA $OUTPUT
+    client/target/release/smac-client $SP_IP $INPUT_IDX $INPUT_DATA $OUTPUT

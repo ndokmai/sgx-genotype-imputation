@@ -43,13 +43,5 @@ name = "test_run"
 path = "app/test_run.rs"
 
 [[bin]]
-name = "host"
-path = "app/host.rs"
-
-[[bin]]
-name = "client"
-path = "app/client.rs"
-
-[[bin]]
 name = "cache_server"
 path = "app/cache_server.rs"
