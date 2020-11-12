@@ -23,8 +23,20 @@ with the correct path. Then run the script (test_chr20_mmac.sh) which saves the 
 out/mmac/. To test leak-resilient Rust implementation of minimac, run minimac/test_chr20_rust.sh
 which saves the output to out/rust/. --->
 
-## Input data processing
+## Input data format
 <!--- Add instructions --->
+SMac client takes two files as user input: index file and data file. These two files together
+encode a haplotype sequence that the user wishes to impute. Index file includes a binary
+vector (0 or 1 in each line) indicating whether the corresponding genetic variant in the
+reference panel (M3VCF file) is included in the user's data. Note that the length of this
+vector should match the number of genetic variants in the reference panel. Data file includes
+a vector of -1 (missing), 0 (reference allele), or 1 (alternative allele), one for each line.
+These correspond to the user's data values at the nonzero indices in the index file. 
+Example input files (`input_ind.txt` and `input_dat.txt`) as well as sample scripts for
+generating random input can be found in `scripts/`.
+
+SMac service provider takes the reference panel in the M3VCF format as input. This file
+is provided as a gzipped file.
 
 ## Client
 Build Client by running
@@ -60,4 +72,5 @@ For example,
 ## Output format
 <!--- Add explanation --->
 
-
+The output of SMac is a text file including the imputed alternative allele dosages at every
+genetic position covered by the reference panel M3VCF file (one number per line).
