@@ -77,4 +77,5 @@ genetic position covered by the reference panel M3VCF file (one number per line)
 
 ## Contact for questions
 Ko Dokmai, ndokmai@iu.edu
+
 Hoon Cho, hhcho@broadinstitute.org
