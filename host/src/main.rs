@@ -1,4 +1,7 @@
+#[cfg(not(feature = "smac-lite"))]
 use smac::*;
+#[cfg(feature = "smac-lite")]
+use smac_lite::*;
 use std::env;
 use std::io::BufWriter;
 use std::net::SocketAddr;

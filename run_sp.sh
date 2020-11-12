@@ -8,24 +8,12 @@ function help_msg {
 
 [[ -z "$REF_PANEL" ]] && { help_msg ; exit 1; }
 
-if [[ $LITE -eq 1 ]]
-then
-    BIN_FLAGS="--features smac-lite --no-default-features"
-fi
+source config.sh
+source common.sh
 
-if [[ $NO_SGX -ne 1 ]]
-then
-    SP_FLAGS="--target x86_64-fortanix-unknown-sgx"
-fi
+# start host
+host/target/release/smac-host $REF_PANEL &
 
-export RUSTFLAGS="-Ctarget-cpu=native -Ctarget-feature=+aes,+avx,+avx2,+sse2,+sse4.1,+ssse3"
-
-(cd host && cargo +nightly build --release $BIN_FLAGS) &&
-    (cd service-provider && cargo +nightly build --release $SP_FLAGS $BIN_FLAGS) &&
-    (
-    # start host
-    host/target/release/smac-host $REF_PANEL &
-    cd service-provider
-    # start service provider
-    cargo +nightly run -q --release $SP_FLAGS $BIN_FLAGS
-)
+# start service provider
+cd service-provider
+cargo +nightly run -q --release $SP_FLAGS $BIN_FLAGS -Zfeatures=itarget

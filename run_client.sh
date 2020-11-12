@@ -11,13 +11,8 @@ function help_msg {
 
 ([[ -z "$SP_IP" ]] || [[ -z "$INPUT_IDX" ]] || [[ -z "$INPUT_DATA" ]] || [[ -z "$OUTPUT" ]]) && { help_msg ; exit 1; }
 
-if [[ $LITE -eq 1 ]]
-then
-    CLIENT_FLAGS="--features smac-lite --no-default-features"
-fi
+source config.sh
+source common.sh
 
-export RUSTFLAGS="-Ctarget-cpu=native -Ctarget-feature=+aes,+avx,+avx2,+sse2,+sse4.1,+ssse3"
-
-(cd client && cargo +nightly build --release $CLIENT_FLAGS) &&
-    # start client
-    client/target/release/smac-client $SP_IP $INPUT_IDX $INPUT_DATA $OUTPUT
+# start client
+client/target/release/smac-client $SP_IP $INPUT_IDX $INPUT_DATA $OUTPUT

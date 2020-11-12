@@ -1,16 +1,6 @@
 #!/bin/bash
-
-if [[ $LITE -eq 1 ]]
-then
-    BIN_FLAGS="--features smac-lite --no-default-features"
-fi
-
-if [[ $NO_SGX -ne 1 ]]
-then
-    SP_FLAGS="--target x86_64-fortanix-unknown-sgx"
-fi
-
-export RUSTFLAGS="-Ctarget-cpu=native -Ctarget-feature=+aes,+avx,+avx2,+sse2,+sse4.1,+ssse3"
+source config.sh
+source common.sh
 
 (cd host && cargo +nightly build --release $BIN_FLAGS) &&
     (cd service-provider && cargo +nightly build --release $SP_FLAGS $BIN_FLAGS -Zfeatures=itarget) &&
