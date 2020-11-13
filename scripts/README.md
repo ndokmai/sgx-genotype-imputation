@@ -6,7 +6,7 @@ python3 gen_template.py test_data/largeref.m3vcf > template.txt
 python3 gen_input.py template.txt input
 ```
 
-This produces input.txt (for SMac) and input.vcf (for minimac). Then run:
+This produces input.txt (for SMac) and input.vcf (for minimac).
 
 <!--```bash-->
 <!--cargo +nightly run --release --bin test_run-->

@@ -1,5 +1,4 @@
-# SMac: Genotype Imputation in Intel SGX
-
+# SMac: Secure Genotype Imputation in Intel SGX
 ## Installation Requirements
 - Ubuntu 16.04/18.04/20.04
 - [Rust](https://www.rust-lang.org/tools/install)
@@ -65,10 +64,9 @@ which saves the output to out/rust/. --->
                                      |                                 |
                                      +-----------Host Machine----------+
 ```
-
 ## Client
 
-### Input data processing
+### Input data format 
 SMac client takes two files as user input: index file and data file. These two files together
 encode a haplotype sequence that the user wishes to impute. Index file includes a binary
 vector (0 or 1 in each line) indicating whether the corresponding genetic variant in the
@@ -86,7 +84,7 @@ To start Client on Client Machine, run
 ```bash
 ./run_client.sh <service provider ip addr> <input index txt file> <input data txt file> <output txt file>
 ```
-where `<input index txt file>` and `<input data txt file>` are formatted according to [input data processing](#input-data-processing). `<output txt file>` is the name of the output text file to be created.  For example, 
+where `<input index txt file>` and `<input data txt file>` are formatted according to [input data format](#input-data-format). `<output txt file>` is the name of the output text file to be created.  For example, 
 
 ```bash
 ./run_client.sh 127.0.0.1 smac/test_data/large_input_ind.txt smac/test_data/large_input_dat.txt output.txt
@@ -111,5 +109,3 @@ genetic position covered by the reference panel M3VCF file (one number per line)
 Ko Dokmai, ndokmai@iu.edu
 
 Hoon Cho, hhcho@broadinstitute.org
-
-
