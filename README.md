@@ -1,8 +1,16 @@
 # SMac: Secure Genotype Imputation in Intel SGX
 ## Installation Requirements
-- Ubuntu 16.04/18.04/20.04
+- Ubuntu 16.04/18.04
 - [Rust](https://www.rust-lang.org/tools/install)
 - [Fortanix EDP](https://edp.fortanix.com/docs/installation/guide/) (for running in SGX mode)
+    - For **Install AESM service**, we recommend installing the **Ubuntu 16.04/18.04** option. In addition, try installing
+    ```bash
+    sudo apt install libsgx-ae*
+    ```
+    Make sure AESM service is up and running by
+    ```bash
+    sudo service aesmd status
+    ```
 - [Clang >= 3.8.0](https://releases.llvm.org/download.html) (for remote attestation)
     - To automatically set up clang 3.8.0 locally, run `source setup_clang.sh`
 
