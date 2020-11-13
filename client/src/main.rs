@@ -3,19 +3,48 @@ use bufstream::BufStream;
 use smac::*;
 #[cfg(feature = "smac-lite")]
 use smac_lite::*;
+
+#[cfg(feature = "remote-attestation")]
+mod ra {
+    use super::*;
+    use ra_sp::{AttestationResult, SpConfig, SpRaContext};
+    pub use sgx_crypto::random::{entropy_new, Rng};
+    pub use sgx_crypto::tls_psk::client;
+
+    const HOST_PORT: u16 = 7779;
+    const CONFIG_FILE_PATH: &str = "client/settings.json";
+
+    fn parse_config_file(path: &str) -> SpConfig {
+        serde_json::from_reader(std::fs::File::open(path).unwrap()).unwrap()
+    }
+
+    pub fn remote_attestation(host_ip_addr: &str) -> AttestationResult {
+        let mut host_stream = tcp_keep_connecting(SocketAddr::from((
+            IpAddr::from_str(host_ip_addr).unwrap(),
+            HOST_PORT,
+        )));
+        eprintln!("Client: connected to Host");
+        eprintln!("Client: begin remote attestation...");
+        let config = parse_config_file(CONFIG_FILE_PATH);
+        let mut entropy = entropy_new();
+        let context = SpRaContext::init(config, &mut entropy).unwrap();
+        let result = context.do_attestation(&mut host_stream).unwrap();
+        eprintln!("Client: remote attestation successful!");
+        result
+    }
+}
+#[cfg(feature = "remote-attestation")]
+use ra::*;
+
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
-use std::net::{SocketAddr, IpAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
 use std::writeln;
 
-const SP_IP_ADDR: &'static str = "127.0.0.1";
 const SP_PORT: u16 = 7778;
-const INPUT_IND_FILE: &'static str = "../smac/test_data/large_input_ind.txt";
-const INPUT_DAT_FILE: &'static str = "../smac/test_data/large_input_dat.txt";
-const OUTPUT_FILE: &'static str = "output.txt";
 
 fn exit_print(name: &str) {
     eprintln!(
@@ -26,35 +55,49 @@ fn exit_print(name: &str) {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let mut sp_ip_addr = SP_IP_ADDR;
-    let mut ind_file = INPUT_IND_FILE;
-    let mut dat_file = INPUT_DAT_FILE;
-    let mut output_file = OUTPUT_FILE;
-    if args.len() == 1 {
-        eprintln!("Client: Using default parameters: ");
-    } else if args.len() == 2 && args[1].as_str() == "-h" {
-        return exit_print(&args[0]);
-    } else if args.len() != 5 {
-        return exit_print(&args[0]);
-    } else {
-        eprintln!("Client: Using command line parameters: ");
-        sp_ip_addr = args[1].as_str();
-        ind_file = args[2].as_str();
-        dat_file = args[3].as_str();
-        output_file = args[4].as_str();
-    }
+    let (sp_ip_addr, ind_file, dat_file, output_file) = {
+        if args.len() != 5 {
+            return exit_print(&args[0]);
+        } else {
+            eprintln!("Client: Using command line parameters: ");
+            (
+                args[1].as_str(),
+                args[2].as_str(),
+                args[3].as_str(),
+                args[4].as_str(),
+            )
+        }
+    };
 
     eprintln!("\tService Provider IP address:\t{}", sp_ip_addr);
-    eprintln!("\tService Provider port:\t{}", SP_PORT);
-    eprintln!("\tInput index file:\t{}", ind_file);
-    eprintln!("\tInput data file:\t{}", dat_file);
-    eprintln!("\tOutput file:\t\t{}", output_file);
+    eprintln!("\tService Provider port:\t\t{}", SP_PORT);
+    eprintln!("\tInput index file:\t\t{}", ind_file);
+    eprintln!("\tInput data file:\t\t{}", dat_file);
+    eprintln!("\tOutput file:\t\t\t{}", output_file);
 
-    let mut stream = BufStream::new(tcp_keep_connecting(
-        SocketAddr::from((IpAddr::from_str(sp_ip_addr).unwrap(), SP_PORT)),
-    ));
+    #[cfg(feature = "remote-attestation")]
+    let ra_result = remote_attestation(sp_ip_addr);
 
-    eprintln!("Client: connected to Server");
+    #[allow(unused_mut)]
+    let mut sp_stream = tcp_keep_connecting(SocketAddr::from((
+        IpAddr::from_str(sp_ip_addr).unwrap(),
+        SP_PORT,
+    )));
+
+    eprintln!("Client: connected to SP");
+
+    #[cfg(feature = "remote-attestation")]
+    let mut entropy = entropy_new();
+    #[cfg(feature = "remote-attestation")]
+    let mut rng = Rng::new(&mut entropy).unwrap();
+    #[cfg(feature = "remote-attestation")]
+    let config = client::config(&mut rng, &ra_result.master_key).unwrap();
+    #[cfg(feature = "remote-attestation")]
+    let mut ctx = client::context(&config).unwrap();
+    #[cfg(feature = "remote-attestation")]
+    let sp_stream = ctx.establish(&mut sp_stream, None).unwrap();
+
+    let mut sp_stream = BufStream::new(sp_stream);
 
     eprintln!("Client: start sending inputs");
 
@@ -63,12 +106,13 @@ fn main() {
         .count();
 
     let mut input_writer = InputWriter::new(n_ind, &Path::new(ind_file), &Path::new(dat_file));
-    input_writer.stream(&mut stream).unwrap();
-    stream.flush().unwrap();
+    input_writer.write(&mut sp_stream).unwrap();
+    sp_stream.flush().unwrap();
 
     eprintln!("Client: done sending inputs");
+    eprintln!("Client: reading outputs from SP...");
 
-    let imputed = StreamOutputReader::read(stream).collect::<Vec<Real>>();
+    let imputed = StreamOutputReader::read(sp_stream).collect::<Vec<Real>>();
 
     let mut file = File::create(output_file).unwrap();
     writeln!(
@@ -82,7 +126,7 @@ fn main() {
     )
     .unwrap();
 
-    eprintln!("Client: imputation result written to {}", OUTPUT_FILE);
+    eprintln!("Client: imputation result written to {}", output_file);
 
     eprintln!("Client: done");
 }

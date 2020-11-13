@@ -15,5 +15,9 @@ source common.sh
 host/target/release/smac-host $REF_PANEL &
 
 # start service provider
-cd service-provider
-cargo +nightly run -q --release $SP_FLAGS $BIN_FLAGS -Zfeatures=itarget
+if [[ $SGX -eq 1 ]]
+then
+    ftxsgx-runner --signature coresident $TARGET_SGX &
+else
+    service-provider/target/release/smac-service-provider &
+fi

@@ -7,11 +7,10 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["smac"]
-#default = ["smac", "remote-attestation"]
+default = ["smac", "remote-attestation"]
 smac-lite = ["smac_lite"]
 sim-mem-measure = []
-#remote-attestation = ["ra-enclave"]
+remote-attestation = ["ra-enclave", "sgx-crypto"]
 
 [dependencies]
 smac_lite = { package = "smac", path = "../smac", default-features = false, optional = true }
@@ -19,14 +18,15 @@ smac = { path = "../smac", optional = true }
 bufstream = "0.1"
 rayon = "1.4"
 
-#[target.'cfg(target_env = "sgx")'.dependencies]
-#ra-enclave = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", optional = true }
+[target.'cfg(target_env = "sgx")'.dependencies]
+ra-enclave = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "ce142a5d953f77a982ea480abef499bb0654629b", optional = true }
+sgx-crypto = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "ce142a5d953f77a982ea480abef499bb0654629b", optional = true }
 
 [package.metadata.fortanix-sgx]
 # stack size (in bytes) for each thread, the default stack size is 0x20000.
 stack-size=0x20000
 # heap size (in bytes), the default heap size is 0x2000000.
-heap-size=0x80000000
+heap-size=0x20000000
 # the default number of threads is equal to the number of available CPUs of
 # the current system.
 # Gotcha: Don't forget to count the main thread when counting number of

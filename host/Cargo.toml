@@ -7,9 +7,12 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["smac"]
+default = ["smac", "remote-attestation"]
 smac-lite = ["smac_lite"]
+remote-attestation = ["ra-client"] 
 
 [dependencies]
 smac_lite = { package = "smac", path = "../smac", default-features = false, optional = true }
 smac = { path = "../smac", optional = true }
+bufstream = "0.1"
+ra-client = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "ce142a5d953f77a982ea480abef499bb0654629b", features = ["verbose"], optional = true }
