@@ -26,6 +26,13 @@ Next, build by running
 ./build.sh
 
 ```
+### Remote attestation configuration
+If remote attestation is enabled, follow the steps below to ensure access to Intel Attestation Service.
+1. Sign up for a Development Access account at https://api.portal.trustedservices.intel.com/EPID-attestation. Make sure that the Name Base Mode is Linkable Quote. Take note of "SPID", "Primary key", and "Secondary key".
+2. Modify the following fields in [client/settings.json](client/settings.json) using the information from the previous step:
+  - "spid": "\<SPID\>"
+  - "primary_subscription_key": "\<Primary Key\>"
+  - "secondary_subscription_key": "\<Secondary key\>"
 
 ## Quick Test
 To locally test whether the code can run successfully according to the configuration, run
@@ -41,28 +48,28 @@ which saves the output to out/rust/. --->
 
 ## Workflow
 ```
-                                     +---------------------------------+
-                                     |              +--------+         |
-                                     |              |        |         |
-                                     |              |  Host  |         |
-                                     |              |        |         |
-                                     |              +----|---+         |
-                                     |                   |             |
-                                     |   reference panel |             |
-                                     |                   |             |
-                         network     |   +---------------|---------+   |
-+------------------+                 |   |               |         |   |
-|                  |                 |   |  +------------v------+  |   |
-|   +----------+   |      input      |   |  |                   |  |   |
-|   |          ----------------------------->  Service Provider |  |   |
-|   |  Client  |   |                 |   |  |                   |  |   |
-|   |          <-----------------------------   [running SMac]  |  |   |
-|   +----------+   |      output     |   |  |                   |  |   |
-|                  |                 |   |  +-------------------+  |   |
-+--Client Machine--+                 |   |                         |   |
-                                     |   +-------SGX Enclave-------+   |
-                                     |                                 |
-                                     +-----------Host Machine----------+
+                                               +---------------------------------+
+     +-----------------------------+           |              +--------+         |
+     |                             |           |              |        |         |
+     |  Intel Attestation Service  |           |              |  Host  |         |
+     |                             |           |              |        |         |
+     +--------------^--------------+           |              +----|---+         |
+                    |                          |                   |             |
+                    |                          |   reference panel |             |
+ verify attestation |                          |                   |             |
+                    |              network     |   +---------------|---------+   |
+          +---------|--------+                 |   |               |         |   |
+          |         |        |                 |   |  +------------v------+  |   |
+          |   +-----v----+   |      input      |   |  |                   |  |   |
+          |   |          ----------------------------->  Service Provider |  |   |
+          |   |  Client  |   |                 |   |  |                   |  |   |
+          |   |          <-----------------------------   [running SMac]  |  |   |
+          |   +----------+   |      output     |   |  |                   |  |   |
+          |                  |                 |   |  +-------------------+  |   |
+          +--Client Machine--+                 |   |                         |   |
+                                               |   +-------SGX Enclave-------+   |
+                                               |                                 |
+                                               +-----------Host Machine----------+
 ```
 ## Client
 
