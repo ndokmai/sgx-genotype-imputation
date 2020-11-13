@@ -75,7 +75,7 @@ vector should match the number of genetic variants in the reference panel. Data 
 a vector of -1 (missing), 0 (reference allele), or 1 (alternative allele), one for each line.
 These correspond to the user's data values at the nonzero indices in the index file. 
 Example input files (`input_ind.txt` and `input_dat.txt`) as well as sample scripts for
-generating random input can be found in [scripts/](script/).
+generating random input can be found in [scripts/](scripts/).
 
 
 ### Running Client 
