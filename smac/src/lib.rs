@@ -1,4 +1,5 @@
 #![feature(const_fn)]
+#![feature(const_mut_refs)]
 #![feature(const_fn_transmute)]
 #![feature(seek_convenience)]
 #![feature(generic_associated_types)]
