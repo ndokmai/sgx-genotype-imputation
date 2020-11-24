@@ -35,7 +35,8 @@ macro_rules! impl_approx {
                 loop {
                     let mut j = 0;
                     loop {
-                        out[j][i] = Self::leaky_from_f32(COEFFS[i][j]);
+                        let out_row = &mut out[j];
+                        out_row[i] = Self::leaky_from_f32(COEFFS[i][j]);
                         j += 1;
                         if j == POLY_DEG + 1 {
                             break;
