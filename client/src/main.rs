@@ -37,8 +37,8 @@ mod ra {
 use ra::*;
 
 use std::env;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::fs::{create_dir_all, File};
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::str::FromStr;
@@ -48,14 +48,14 @@ const SP_PORT: u16 = 7778;
 
 fn exit_print(name: &str) {
     eprintln!(
-        "Usage: {} <service provider ip addr> <index input file> <data input file> <output file>",
+        "Usage: {} <reference panel file> <bitmask file> <symbols batch dir> <results dir>",
         name
     );
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let (sp_ip_addr, ind_file, dat_file, output_file) = {
+    let (sp_ip_addr, bitmask_file, symbols_batch_dir, results_dir) = {
         if args.len() != 5 {
             return exit_print(&args[0]);
         } else {
@@ -71,9 +71,9 @@ fn main() {
 
     eprintln!("\tService Provider IP address:\t{}", sp_ip_addr);
     eprintln!("\tService Provider port:\t\t{}", SP_PORT);
-    eprintln!("\tInput index file:\t\t{}", ind_file);
-    eprintln!("\tInput data file:\t\t{}", dat_file);
-    eprintln!("\tOutput file:\t\t\t{}", output_file);
+    eprintln!("\tBitmask file:\t\t\t{}", bitmask_file);
+    eprintln!("\tSymbols batch directory:\t{}", symbols_batch_dir);
+    eprintln!("\tResults directory:\t\t{}", results_dir);
 
     #[cfg(feature = "remote-attestation")]
     let ra_result = remote_attestation(sp_ip_addr);
@@ -85,7 +85,6 @@ fn main() {
     )));
 
     eprintln!("Client: connected to SP");
-
     #[cfg(feature = "remote-attestation")]
     let mut entropy = entropy_new();
     #[cfg(feature = "remote-attestation")]
@@ -101,32 +100,51 @@ fn main() {
 
     eprintln!("Client: start sending inputs");
 
-    let n_ind = BufReader::new(File::open(ind_file).unwrap())
-        .lines()
-        .count();
+    let bitmask = load_bitmask(Path::new(bitmask_file));
+    let symbols_batch_iter = load_symbols_batch(Path::new(symbols_batch_dir));
 
-    let mut input_writer = InputWriter::new(n_ind, &Path::new(ind_file), &Path::new(dat_file));
-    input_writer.write(&mut sp_stream).unwrap();
+    let mut paths = Vec::new();
+
+    eprintln!("Client: sending bitmask file...");
+    bincode::serialize_into(&mut sp_stream, &bitmask).unwrap();
+
+    let batch_size = get_symbols_batch_size(Path::new(symbols_batch_dir));
+
+    bincode::serialize_into(&mut sp_stream, &batch_size).unwrap();
+
+    for (path, symbols) in symbols_batch_iter {
+        eprintln!("Client: \tsending {}", path.to_str().unwrap());
+        paths.push(path);
+        bincode::serialize_into(&mut sp_stream, &symbols).unwrap();
+    }
     sp_stream.flush().unwrap();
 
     eprintln!("Client: done sending inputs");
-    eprintln!("Client: reading outputs from SP...");
 
-    let imputed = StreamOutputReader::read(sp_stream).collect::<Vec<Real>>();
+    create_dir_all(results_dir).expect("Cannot create directory");
 
-    let mut file = File::create(output_file).unwrap();
-    writeln!(
-        file,
-        "{}",
-        imputed
-            .iter()
-            .map(|n| n.to_string())
-            .collect::<Vec<String>>()
-            .join("\n")
-    )
-    .unwrap();
+    eprintln!("Client: waiting for results...");
 
-    eprintln!("Client: imputation result written to {}", output_file);
-
-    eprintln!("Client: done");
+    for path in paths.into_iter() {
+        let path = format!(
+            "{}{}",
+            path.file_stem().unwrap().to_str().unwrap(),
+            ".result.txt"
+        );
+        let path = Path::new(results_dir).join(&path);
+        let result: Vec<f32> = bincode::deserialize_from(&mut sp_stream).unwrap();
+        eprintln!("Client: \t writing results to {}", path.to_str().unwrap());
+        let mut file = File::create(path).unwrap();
+        writeln!(
+            file,
+            "{}",
+            result
+                .iter()
+                .map(|n| n.to_string())
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
+        .unwrap();
+    }
+    eprint!("Client: done!");
 }

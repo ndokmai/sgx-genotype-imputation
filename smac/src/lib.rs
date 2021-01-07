@@ -12,22 +12,20 @@
     feature(sgx_platform)
 )]
 
-mod block;
-pub mod cache;
+pub mod block;
+pub mod client_input;
 pub mod impute;
-pub mod input;
 #[cfg(feature = "leak-resistant")]
 mod ln_fixed;
-pub mod output;
 pub mod ref_panel;
 mod symbol;
-mod symbol_vec;
+pub mod symbol_vec;
 pub mod tcp;
 
-pub use crate::cache::*;
+pub use crate::block::*;
+pub use crate::client_input::*;
+pub use crate::symbol_vec::*;
 pub use crate::impute::*;
-pub use crate::input::*;
-pub use crate::output::*;
 pub use crate::ref_panel::*;
 pub use crate::tcp::*;
 
@@ -35,14 +33,14 @@ pub use crate::tcp::*;
 mod inner {
     use super::*;
     pub type Real = f32;
-    pub type Input = symbol::Symbol;
+    pub type TargetSymbol = symbol::Symbol;
 }
 
 #[cfg(feature = "leak-resistant")]
 mod inner {
     use super::*;
     pub type Real = ln_fixed::TpLnFixed<typenum::U20>;
-    pub type Input = timing_shield::TpI8;
+    pub type TargetSymbol = timing_shield::TpI8;
 }
 
 pub use inner::*;

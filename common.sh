@@ -1,5 +1,8 @@
 #!/bin/bash
 
+ENCLAVE_HEAP_SIZE=0x$(echo "obase=16; $(numfmt --from=iec $ENCLAVE_HEAP_SIZE)" | bc)
+ENCLAVE_STACK_SIZE=0x$(echo "obase=16; $(numfmt --from=iec $ENCLAVE_STACK_SIZE)" | bc)
+
 RUSTFLAGS="-Ctarget-cpu=native -Ctarget-feature=+aes,+avx,+avx2,+sse2,+sse4.1,+ssse3"
 export RUSTFLAGS="$RUSTFLAGS"
 

@@ -1,15 +1,11 @@
 use smac::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::net::SocketAddr;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-use std::thread::spawn;
 
 const REF_PANEL_FILE: &'static str = "test_data/smallref.m3vcf.gz";
-const INPUT_IND_FILE: &'static str = "test_data/small_input_ind.txt";
-const INPUT_DAT_FILE: &'static str = "test_data/small_input_dat.txt";
-const N_IND: usize = 936;
+const BITMASK_FILE: &'static str = "test_data/small_input_bitmask.txt";
+const SYMBOLS_FILE: &'static str = "test_data/small_input_symbols.txt";
 
 #[cfg(not(feature = "leak-resistant"))]
 const REF_OUTPUT_FILE: &'static str = "test_data/small_output_ref.txt";
@@ -32,48 +28,15 @@ fn load_ref_output() -> Vec<f32> {
 
 #[test]
 fn integration_test() {
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(7)
-        .build_global()
-        .unwrap();
-
-    let port: u16 = 9999;
-    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
-    spawn(move || {
-        TcpCacheBackend::remote_proc(port, Some(6), OffloadCache::new(50, FileCacheBackend));
-    });
-
     let ref_panel_path = Path::new(REF_PANEL_FILE);
-    let input_ind_path = Path::new(INPUT_IND_FILE);
-    let input_dat_path = Path::new(INPUT_DAT_FILE);
-
-    let (ref_panel_stream1, mut ref_panel_stream2) = pipe::pipe();
-    spawn(move || {
-        let mut ref_panel_writer = RefPanelWriter::new(&ref_panel_path);
-        ref_panel_writer.write(&mut ref_panel_stream2).unwrap();
-    });
-    let ref_panel_reader =
-        RefPanelReader::new(50, Arc::new(Mutex::new(ref_panel_stream1))).unwrap();
-    let n_markers = ref_panel_reader.n_markers();
-
-    let (input_stream1, mut input_stream2) = pipe::bipipe();
-    let input_stream1 = Arc::new(Mutex::new(input_stream1));
-    let handle = spawn(move || {
-        let mut input_writer = InputWriter::new(N_IND, &input_ind_path, &input_dat_path);
-        {
-            input_writer.stream(&mut input_stream2).unwrap();
-        }
-        StreamOutputReader::read(input_stream2).collect::<Vec<Real>>()
-    });
-
-    let (thap_ind, thap_dat) = InputReader::new(50, input_stream1.clone()).into_pair_iter();
-    let cache = OffloadCache::new(50, EncryptedCacheBackend::new(TcpCacheBackend::new(addr)));
-    let output_writer = LazyStreamOutputWriter::new(n_markers, input_stream1);
-    smac(thap_ind, thap_dat, ref_panel_reader, cache, output_writer);
-
-    let imputed = handle.join().unwrap();
+    let bitmask_path = Path::new(BITMASK_FILE);
+    let symbols_path = Path::new(SYMBOLS_FILE);
+    let (ref_panel_meta, ref_panel_block_iter) = load_ref_panel(ref_panel_path);
+    let ref_panel_blocks = ref_panel_block_iter.collect::<Vec<_>>();
+    let bitmask = load_bitmask_iter(bitmask_path).collect::<Vec<_>>();
+    let symbols = load_symbols_iter(symbols_path).collect::<Vec<_>>();
+    let imputed = smac(&ref_panel_meta, &ref_panel_blocks, &bitmask, symbols);
     let ref_imputed = load_ref_output();
-
     assert!(imputed
         .into_iter()
         .zip(ref_imputed.into_iter())

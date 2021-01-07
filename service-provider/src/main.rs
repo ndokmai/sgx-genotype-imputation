@@ -13,18 +13,19 @@ mod ra {
 #[cfg(feature = "remote-attestation")]
 use ra::*;
 
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::channel;
 use std::time::Instant;
 
 const HOST_PORT: u16 = 7777;
 const CLIENT_PORT: u16 = 7778;
+const N_THREADS: usize = 8;
 
 fn main() {
     rayon::ThreadPoolBuilder::new()
-        .num_threads(6)
+        .num_threads(N_THREADS)
         .build_global()
         .unwrap();
 
@@ -36,6 +37,7 @@ fn main() {
     .unwrap()
     .accept()
     .unwrap();
+
 
     eprintln!("SP: accepted connection from Host at {:?}", host_socket);
 
@@ -49,6 +51,8 @@ fn main() {
         eprintln!("SP: remote-attestation successful!");
         server::callback(&master_key)
     };
+
+    let mut host_stream = BufStream::new(host_stream);
 
     #[allow(unused_mut)]
     let (mut client_stream, client_socket) = TcpListener::bind(SocketAddr::from((
@@ -70,48 +74,56 @@ fn main() {
     #[cfg(feature = "remote-attestation")]
     let client_stream = ctx.establish(&mut client_stream, None).unwrap();
 
-    let ref_panel_reader =
-        RefPanelReader::new(10, Arc::new(Mutex::new(BufReader::new(host_stream)))).unwrap();
+    eprintln!("SP: receiving reference panel from Host...");
+    let ref_panel_meta: RefPanelMeta = bincode::deserialize_from(&mut host_stream).unwrap();
+    let ref_panel_blocks: Vec<Block> = bincode::deserialize_from(&mut host_stream).unwrap();
 
-    let mut client_stream = BufStream::with_capacities(
-        1 << 18,
-        1 << 18,
-        client_stream,
-    );
+    eprintln!("SP: receiving bitmask from Client...");
+    let mut client_stream = BufStream::new(client_stream);
+    let bitmask: Bitmask = bincode::deserialize_from(&mut client_stream).unwrap();
+    let bitmask = bitmask.into_iter().collect::<Vec<_>>();
 
-    let (thap_ind, thap_dat) = OwnedInput::from_remote(&mut client_stream).unwrap().into_pair_iter();
-
-    #[cfg(any(
-        all(target_env = "sgx", target_vendor = "fortanix"),
-        feature = "sim-mem-measure"
-    ))]
-    let cache = LocalCache;
-
-    #[cfg(all(
-        not(all(target_env = "sgx", target_vendor = "fortanix")),
-        not(feature = "sim-mem-measure")
-    ))]
-    let cache = OffloadCache::new(100, FileCacheBackend);
-
-    let output_writer = OwnedOutputWriter::new();
-
-    let n_markers = ref_panel_reader.n_markers();
     eprintln!("SP: begin imputation");
+    let mut batch_size: usize = bincode::deserialize_from(&mut client_stream).unwrap();
 
-    let now = std::time::Instant::now();
+    let (symbols_send, symbols_recv) = channel();
+    let (results_send, results_recv) = channel();
 
-    let output = smac(thap_ind, thap_dat, ref_panel_reader, cache, output_writer);
+    std::thread::spawn(move || {
+        loop {
+            if let Ok(symbols_batch) = symbols_recv.recv() {
+                let now = std::time::Instant::now();
+                let results = smac_batch(&ref_panel_meta, &ref_panel_blocks, &bitmask, symbols_batch);
+                eprintln!(
+                    "SP: \timputation time = {} ms",
+                    (Instant::now() - now).as_millis()
+                );
+                results_send.send(results).unwrap();
+            } else {
+                break;
+            }
+        }
+    });
 
-    eprintln!(
-        "SP: imputation time = {} ms",
-        (Instant::now() - now).as_millis()
-    );
+    let n_threads = rayon::current_num_threads();
 
-    eprintln!("SP: writing outputs to Client ...");
-    let mut output_writer = StreamOutputWriter::new(n_markers, &mut client_stream);
-    for o in output.into_reader() {
-        output_writer.push(o);
+
+    while batch_size > 0 {
+        let n = usize::min(batch_size, n_threads);
+        batch_size -= n;
+        let mut symbols_batch = Vec::with_capacity(n);
+        eprintln!("SP: \tprocessing a new batch of size {}", n);
+        for _ in 0..n {
+            let symbols: SymbolVec = bincode::deserialize_from(&mut client_stream).unwrap();
+            symbols_batch.push(symbols.into_iter().collect::<Vec<_>>());
+        }
+        symbols_send.send(symbols_batch).unwrap();
+        let results = results_recv.recv().unwrap();
+        eprintln!("SP: \twriting results to Client...");
+        for result in results.into_iter() {
+            bincode::serialize_into(&mut client_stream, &result).unwrap();
+        }
+        client_stream.flush().unwrap();
     }
-
     eprintln!("SP: done");
 }

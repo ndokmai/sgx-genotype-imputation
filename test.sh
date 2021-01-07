@@ -6,4 +6,4 @@ source common.sh
 
 sleep 0.1
 
-./run_client.sh 127.0.0.1 smac/test_data/large_input_ind.txt smac/test_data/large_input_dat.txt output.txt
+./run_client.sh 127.0.0.1 smac/test_data/large_input_bitmask.txt smac/test_data/batch results

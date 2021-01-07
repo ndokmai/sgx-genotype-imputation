@@ -1,15 +1,11 @@
 use crate::block::Block;
-use crate::cache::*;
-use crate::output::OutputWrite;
-use crate::ref_panel::RefPanelRead;
+use crate::ref_panel::RefPanelMeta;
 use crate::symbol::Symbol;
-use crate::symbol_vec::SymbolVec;
-use crate::{Input, Real};
-use bitvec::prelude::{BitSlice, BitVec, Lsb0};
-use crossbeam::{bounded, Receiver};
+use crate::{Real, TargetSymbol};
+use bitvec::slice::BitSlice;
 use lazy_static::lazy_static;
-use ndarray::{s, Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
-use num_traits::identities::One;
+use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
+use rayon::prelude::*;
 use std::convert::TryFrom;
 
 #[cfg(feature = "leak-resistant")]
@@ -29,190 +25,203 @@ lazy_static! {
     static ref _E: Real = __E.into();
 }
 
-pub fn smac<O: OutputWrite<Real> + Send + 'static>(
-    mut thap_ind: impl Iterator<Item = bool>,
-    mut thap_dat: impl Iterator<Item = Input>,
-    mut ref_panel: impl RefPanelRead,
-    mut cache: impl Cache,
-    output_writer: O,
-) -> O {
-    let m = ref_panel.n_haps();
+struct FwdCacheBlock {
+    pub prob: Array2<Real>,
+    pub prob_norecom: Array2<Real>,
+    pub prob_first: Array1<Real>,
+    pub prob_all: Array1<Real>,
+}
+
+pub fn smac_batch(
+    ref_panel_meta: &RefPanelMeta,
+    ref_panel_blocks: &[Block],
+    bitmask: &[bool],
+    symbols_batch: Vec<Vec<Symbol>>,
+) -> Vec<Vec<Real>> {
+    symbols_batch
+        .into_par_iter()
+        .map(|s| smac(ref_panel_meta, ref_panel_blocks, bitmask, s))
+        .collect()
+}
+
+pub fn smac(
+    ref_panel_meta: &RefPanelMeta,
+    ref_panel_blocks: &[Block],
+    bitmask: &[bool],
+    symbols: Vec<Symbol>,
+) -> Vec<Real> {
+    assert_eq!(ref_panel_meta.n_blocks, ref_panel_blocks.len());
+    assert_eq!(ref_panel_meta.n_markers, bitmask.len());
+    assert_eq!(bitmask.iter().filter(|&&v| v).count(), symbols.len());
+
+    #[cfg(feature = "leak-resistant")]
+    let symbols = symbols
+        .into_iter()
+        .map(|v| TargetSymbol::protect(v.into()))
+        .collect::<Vec<_>>();
+
+    let fwd_cache = forward_pass(
+        ref_panel_meta,
+        ref_panel_blocks,
+        bitmask,
+        symbols.as_slice(),
+    );
+
+    backward_pass(
+        ref_panel_meta,
+        ref_panel_blocks,
+        bitmask,
+        symbols.as_slice(),
+        fwd_cache,
+    )
+}
+
+fn forward_pass(
+    ref_panel_meta: &RefPanelMeta,
+    ref_panel_blocks: &[Block],
+    bitmask: &[bool],
+    symbols: &[TargetSymbol],
+) -> Vec<FwdCacheBlock> {
+    let mut bitmask_iter = bitmask.iter().cloned();
+    let mut symbol_iter = symbols.iter().cloned();
+
+    let mut fwd_cache_blocks = Vec::with_capacity(ref_panel_blocks.len());
+
+    let m = ref_panel_meta.n_haps;
     let m_real: Real = u16::try_from(m).unwrap().into();
-    let n_blocks = ref_panel.n_blocks();
-
-    let mut block_cache = cache.new_save();
-    let mut thap_block_cache = cache.new_save();
-    let mut fwdprob_cache = cache.new_save();
-    let mut fwdprob_norecom_cache = cache.new_save();
-    let mut fwdprob_first_cache = cache.new_save();
-    let mut fwdprob_all_cache = cache.new_save();
-
     let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
 
-    // Forward pass
-    for b in 0..n_blocks {
-        let mut thap_dat_block = SymbolVec::new();
-        let mut thap_ind_block = BitVec::<Lsb0, u64>::new();
-        let block = if b == 0 {
-            // First position emission (edge case)
-            let first_block = ref_panel.next().unwrap();
-            let first_ind = thap_ind.next().unwrap();
-            thap_ind_block.push(first_ind);
-            if first_ind {
-                let first_dat = thap_dat.next().unwrap();
-
-                #[cfg(not(feature = "leak-resistant"))]
-                thap_dat_block.push(first_dat);
-
-                #[cfg(feature = "leak-resistant")]
-                thap_dat_block.push(first_dat.expose().into());
-
-                first_emission(first_dat, &first_block, sprob_all.view_mut());
+    for (b_id, block) in ref_panel_blocks.iter().enumerate() {
+        // First position emission (edge case)
+        if b_id == 0 {
+            let mask = bitmask_iter.next().unwrap();
+            if mask {
+                let symbol = symbol_iter.next().unwrap();
+                first_emission(symbol, block, sprob_all.view_mut());
             }
-            first_block
-        } else {
-            ref_panel.next().unwrap()
-        };
+        }
 
-        fwdprob_all_cache.push(sprob_all.clone());
-
-        let mut fwdprob = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
-        let mut fwdprob_norecom =
+        let prob_all_cache = sprob_all.clone();
+        let mut prob_cache = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
+        let mut prob_norecom_cache =
             unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
 
-        let mut sprob = fold_probabilities(sprob_all.view(), &block);
-
+        let mut sprob = fold_probabilities(sprob_all.view(), block);
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
 
-        // Cache forward probabilities at first position
-        fwdprob.row_mut(0).assign(&sprob);
-        fwdprob_norecom.row_mut(0).assign(&sprob_norecom);
-
         // Walk
-        Zip::from(block.rprob.slice(s![..block.nvar - 1]))
-            .and(block.afreq.slice(s![1..]))
-            .and(&block.rhap[1..])
-            .and(fwdprob.slice_mut(s![1.., ..]).genrows_mut())
-            .and(fwdprob_norecom.slice_mut(s![1.., ..]).genrows_mut())
-            .apply(
-                |&rec, &block_afreq, rhap_row, mut fwdprob_row, mut fwdprob_norecom_row| {
-                    let tflag = thap_ind.next().unwrap();
-                    thap_ind_block.push(tflag);
-                    transition(
-                        rec,
-                        m_real,
-                        block.clustsize.view(),
-                        sprob.view_mut(),
-                        sprob_norecom.view_mut(),
-                    );
+        // Cache forward probabilities at first position
+        prob_cache.row_mut(0).assign(&sprob);
+        prob_norecom_cache.row_mut(0).assign(&sprob_norecom);
 
-                    if tflag {
-                        let tsym = thap_dat.next().unwrap();
+        for i in 1..block.nvar {
+            let mask = bitmask_iter.next().unwrap();
+            let rec = block.rprob[i - 1];
 
-                        #[cfg(not(feature = "leak-resistant"))]
-                        thap_dat_block.push(tsym);
-
-                        #[cfg(feature = "leak-resistant")]
-                        thap_dat_block.push(tsym.expose().into());
-
-                        later_emission(
-                            tsym,
-                            sprob.view_mut(),
-                            sprob_norecom.view_mut(),
-                            block_afreq,
-                            rhap_row,
-                        );
-                    }
-
-                    fwdprob_row.assign(&sprob);
-                    fwdprob_norecom_row.assign(&sprob_norecom);
-                },
+            transition(
+                rec,
+                m_real,
+                block.clustsize.view(),
+                sprob.view_mut(),
+                sprob_norecom.view_mut(),
             );
 
+            if mask {
+                let symbol = symbol_iter.next().unwrap();
+
+                later_emission(
+                    symbol,
+                    sprob.view_mut(),
+                    sprob_norecom.view_mut(),
+                    block.afreq[i],
+                    block.rhap[i].as_bitslice(),
+                );
+            }
+
+            prob_cache.row_mut(i).assign(&sprob);
+            prob_norecom_cache.row_mut(i).assign(&sprob_norecom);
+        }
+
         // Skip last block
-        if b < n_blocks - 1 {
+        if b_id != ref_panel_blocks.len() - 1 {
             let sprob_recom = sprob - sprob_norecom.clone();
             unfold_probabilities(
-                &block,
+                block,
                 sprob_all.view_mut(),
                 sprob_first.clone(),
                 sprob_recom,
                 sprob_norecom,
             );
         }
-        thap_ind_block.shrink_to_fit();
-        thap_dat_block.shrink_to_fit();
-        thap_block_cache.push((thap_ind_block, thap_dat_block));
-        block_cache.push(block);
-        fwdprob_cache.push(fwdprob);
-        fwdprob_norecom_cache.push(fwdprob_norecom);
-        fwdprob_first_cache.push(sprob_first);
+
+        let fwd_cache_block = FwdCacheBlock {
+            prob: prob_cache,
+            prob_norecom: prob_norecom_cache,
+            prob_first: sprob_first,
+            prob_all: prob_all_cache,
+        };
+        fwd_cache_blocks.push(fwd_cache_block);
     }
+    fwd_cache_blocks
+}
 
-    drop(thap_ind);
-    drop(thap_dat);
-    drop(ref_panel);
+fn backward_pass(
+    ref_panel_meta: &RefPanelMeta,
+    ref_panel_blocks: &[Block],
+    bitmask: &[bool],
+    symbols: &[TargetSymbol],
+    cache_blocks: Vec<FwdCacheBlock>,
+) -> Vec<Real> {
+    let mut bitmask_iter = bitmask.iter().cloned().rev();
+    let mut symbol_iter = symbols.iter().cloned().rev();
 
-    let mut block_cache = block_cache.into_load();
-    let mut thap_block_cache = thap_block_cache.into_load();
-    let fwdprob_cache = fwdprob_cache.into_load();
-    let fwdprob_norecom_cache = fwdprob_norecom_cache.into_load();
-    let fwdprob_first_cache = fwdprob_first_cache.into_load();
-    let fwdprob_all_cache = fwdprob_all_cache.into_load();
+    let mut outputs = Vec::with_capacity(ref_panel_blocks.len());
 
-    // Backward pass
-    sprob_all.fill(Real::one());
+    let m = ref_panel_meta.n_haps;
+    let m_real: Real = u16::try_from(m).unwrap().into();
+    let mut sprob_all = Array1::<Real>::ones(m); // unnormalized
 
-    let bound = 30;
-    let (block_send, block_recv) = bounded(bound);
-    let (sprod_send, sprob_recv) = bounded(bound);
-    let (sprod_first_send, sprob_first_recv) = bounded(bound);
-    let (sprod_norecomb_send, sprob_norecom_recv) = bounded(bound);
-    let (sprod_all_send, sprob_all_recv) = bounded(bound);
-
-    let handle = std::thread::spawn(move || {
-        impute_all(
-            n_blocks,
-            block_recv,
-            sprob_recv,
-            sprob_first_recv,
-            sprob_norecom_recv,
-            sprob_all_recv,
-            fwdprob_cache,
-            fwdprob_first_cache,
-            fwdprob_norecom_cache,
-            fwdprob_all_cache,
-            output_writer,
-        )
-    });
-
-    for b in (0..n_blocks).rev() {
-        let block = block_cache.pop().unwrap();
-        let (mut thap_ind_block, mut thap_dat_block) = thap_block_cache.pop().unwrap();
-
-        block_send.send(block.to_owned()).unwrap();
-        sprod_all_send.send(sprob_all.to_owned()).unwrap();
+    for (b_id, (block, cache_block)) in ref_panel_blocks
+        .iter()
+        .zip(cache_blocks.into_iter())
+        .enumerate()
+        .rev()
+    {
+        let (fwd_prob, fwd_prob_norecom, fwd_prob_first, fwd_prob_all) = (
+            cache_block.prob,
+            cache_block.prob_norecom,
+            cache_block.prob_first,
+            cache_block.prob_all,
+        );
 
         let mut sprob = fold_probabilities(sprob_all.view(), &block);
         let sprob_first = sprob.clone();
         let mut sprob_norecom = sprob.clone();
 
+        let jprob = precompute_joint(block, sprob_all.clone(), fwd_prob_all);
+
         // Walk
         for j in (1..block.nvar).rev() {
-            sprod_send.send(sprob.to_owned()).unwrap();
-            sprod_first_send.send(sprob_first.to_owned()).unwrap();
-            sprod_norecomb_send.send(sprob_norecom.to_owned()).unwrap();
+            let output = impute(
+                jprob.clone(),
+                block.clustsize.view(),
+                block.rhap[j].as_bitslice(),
+                fwd_prob.row(j).to_owned(),
+                fwd_prob_first.clone(),
+                fwd_prob_norecom.row(j).to_owned(),
+                sprob.clone(),
+                sprob_first.clone(),
+                sprob_norecom.clone(),
+            );
+            outputs.push(output);
 
-            if thap_ind_block.pop().unwrap() {
-                #[cfg(not(feature = "leak-resistant"))]
-                let tsym = thap_dat_block.pop().unwrap();
-
-                #[cfg(feature = "leak-resistant")]
-                let tsym = Input::protect(thap_dat_block.pop().unwrap().into());
+            let mask = bitmask_iter.next().unwrap();
+            if mask {
+                let symbol = symbol_iter.next().unwrap();
 
                 later_emission(
-                    tsym,
+                    symbol,
                     sprob.view_mut(),
                     sprob_norecom.view_mut(),
                     block.afreq[j],
@@ -230,10 +239,19 @@ pub fn smac<O: OutputWrite<Real> + Send + 'static>(
             );
         }
 
-        if b == 0 {
-            sprod_send.send(sprob).unwrap();
-            sprod_first_send.send(sprob_first).unwrap();
-            sprod_norecomb_send.send(sprob_norecom).unwrap();
+        if b_id == 0 {
+            let output = impute(
+                jprob,
+                block.clustsize.view(),
+                block.rhap[0].as_bitslice(),
+                fwd_prob.row(0).to_owned(),
+                fwd_prob_first,
+                fwd_prob_norecom.row(0).to_owned(),
+                sprob,
+                sprob_first,
+                sprob_norecom,
+            );
+            outputs.push(output);
         } else {
             let sprob_recom = sprob - sprob_norecom.clone();
             unfold_probabilities(
@@ -245,7 +263,7 @@ pub fn smac<O: OutputWrite<Real> + Send + 'static>(
             );
         }
     }
-    handle.join().unwrap()
+    outputs.into_iter().rev().collect()
 }
 
 fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real> {
@@ -273,7 +291,7 @@ fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real
     }
 }
 
-fn single_emission(tsym: Input, block_afreq: f32, rhap: Symbol) -> Real {
+fn single_emission(tsym: TargetSymbol, block_afreq: f32, rhap: Symbol) -> Real {
     #[cfg(not(feature = "leak-resistant"))]
     {
         let afreq = if tsym == Symbol::Alt {
@@ -299,29 +317,33 @@ fn single_emission(tsym: Input, block_afreq: f32, rhap: Symbol) -> Real {
     )
 }
 
-fn first_emission(tsym: Input, block: &Block, mut sprob_all: ArrayViewMut1<Real>) {
+fn first_emission(tsym: TargetSymbol, block: &Block, mut sprob_all: ArrayViewMut1<Real>) {
     let afreq = block.afreq[0];
 
     #[cfg(not(feature = "leak-resistant"))]
     if tsym != Symbol::Missing {
-        Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
-            let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
-            *p *= emi
-        });
+        Zip::from(&mut sprob_all)
+            .and(&block.indmap)
+            .apply(|prob, &i| {
+                let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
+                *prob *= emi
+            });
     }
 
     #[cfg(feature = "leak-resistant")]
     {
         let cond = tsym.tp_not_eq(&-1);
-        Zip::from(&mut sprob_all).and(&block.indmap).apply(|p, &i| {
-            let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
-            *p = cond.select(emi, *p);
-        });
+        Zip::from(&mut sprob_all)
+            .and(&block.indmap)
+            .apply(|prob, &i| {
+                let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
+                *prob = cond.select(emi, *prob);
+            });
     }
 }
 
 fn later_emission(
-    tsym: Input,
+    tsym: TargetSymbol,
     mut sprob: ArrayViewMut1<Real>,
     mut sprob_norecom: ArrayViewMut1<Real>,
     block_afreq: f32,
@@ -333,10 +355,10 @@ fn later_emission(
             .iter_mut()
             .zip(sprob_norecom.iter_mut())
             .zip(rhap_row.iter())
-            .for_each(|((p, p_norecom), &rhap)| {
+            .for_each(|((prob, prob_norecom), &rhap)| {
                 let emi = single_emission(tsym, block_afreq, rhap.into());
-                *p *= emi;
-                *p_norecom *= emi;
+                *prob *= emi;
+                *prob_norecom *= emi;
             });
     }
     #[cfg(feature = "leak-resistant")]
@@ -346,10 +368,10 @@ fn later_emission(
             .iter_mut()
             .zip(sprob_norecom.iter_mut())
             .zip(rhap_row.iter())
-            .for_each(|((p, p_norecom), &rhap)| {
+            .for_each(|((prob, prob_norecom), &rhap)| {
                 let emi = single_emission(tsym, block_afreq, rhap.into());
-                *p = cond.select(*p * emi, *p);
-                *p_norecom = cond.select(*p_norecom * emi, *p_norecom);
+                *prob = cond.select(*prob * emi, *prob);
+                *prob_norecom = cond.select(*prob_norecom * emi, *prob_norecom);
             });
     }
 }
@@ -391,7 +413,6 @@ fn transition(
     sprob.assign(&(complement * &sprob + &clustsize * sprob_tot));
 }
 
-#[allow(non_snake_case)]
 fn unfold_probabilities(
     block: &Block,
     mut sprob_all: ArrayViewMut1<Real>,
@@ -404,9 +425,9 @@ fn unfold_probabilities(
 
     Zip::from(&mut sprob_all)
         .and(&block.indmap)
-        .apply(|p, &ui| {
+        .apply(|prob, &ui| {
             let ui = ui as usize;
-            *p = precomp1[ui] + *p * precomp2[ui];
+            *prob = precomp1[ui] + *prob * precomp2[ui];
         });
 }
 
@@ -487,44 +508,4 @@ fn impute(
         )
     };
     p1 / (p1 + p0)
-}
-
-fn impute_all<O: OutputWrite<Real>>(
-    n_blocks: usize,
-    block_recv: Receiver<Block>,
-    sprob: Receiver<Array1<Real>>,
-    sprob_first: Receiver<Array1<Real>>,
-    sprob_norecom: Receiver<Array1<Real>>,
-    sprob_all: Receiver<Array1<Real>>,
-    mut fwdprob_cache: impl CacheLoad<Array2<Real>>,
-    mut fwdprob_first_cache: impl CacheLoad<Array1<Real>>,
-    mut fwdprob_norecom_cache: impl CacheLoad<Array2<Real>>,
-    mut fwdprob_all_cache: impl CacheLoad<Array1<Real>>,
-    mut output_writer: O,
-) -> O {
-    for b in 0..n_blocks {
-        let block = block_recv.recv().unwrap();
-        let fwdprob = fwdprob_cache.pop().unwrap();
-        let fwdprob_norecom = fwdprob_norecom_cache.pop().unwrap();
-        let fwdprob_first = fwdprob_first_cache.pop().unwrap();
-        let fwdprob_all = fwdprob_all_cache.pop().unwrap();
-        let jprob = precompute_joint(&block, sprob_all.recv().unwrap(), fwdprob_all);
-
-        let first = if b == n_blocks - 1 { 0 } else { 1 };
-        // Walk
-        for j in (first..block.nvar).rev() {
-            output_writer.push(impute(
-                jprob.clone(),
-                block.clustsize.view(),
-                block.rhap[j].as_bitslice(),
-                fwdprob.row(j).to_owned(),
-                fwdprob_first.clone(),
-                fwdprob_norecom.row(j).to_owned(),
-                sprob.recv().unwrap(),
-                sprob_first.recv().unwrap(),
-                sprob_norecom.recv().unwrap(),
-            ));
-        }
-    }
-    output_writer
 }

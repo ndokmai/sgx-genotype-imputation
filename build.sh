@@ -14,7 +14,7 @@ echo "===== Building Service Provider... ====="
 (cd service-provider && cargo +nightly build --release $SP_FLAGS $BIN_FLAGS -Zfeatures=itarget) &&
     if [[ $SGX -eq 1 ]]
     then
-        ftxsgx-elf2sgxs $TARGET --heap-size $ENCLAVE_HEAP_SIZE -d --stack-size $ENCLAVE_STACK_SIZE --threads 8 --output $TARGET_SGX &&
+        ftxsgx-elf2sgxs $TARGET --heap-size $ENCLAVE_HEAP_SIZE -d --stack-size $ENCLAVE_STACK_SIZE --threads 10 --output $TARGET_SGX &&
         sgxs-sign --key $SP_SIGNING_KEY $TARGET_SGX $TARGET_SIG -d --xfrm 7/0 --isvprodid 0 --isvsvn 0
     fi
 

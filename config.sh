@@ -8,6 +8,6 @@ RA=1
 
 # Enclave configuration
 ## location of private key to sign enclave
-ENCLAVE_HEAP_SIZE=0x20000000
-ENCLAVE_STACK_SIZE=0x20000
-SP_SIGNING_KEY=service-provider/keys/sp_private_singing_key.pem
+ENCLAVE_HEAP_SIZE=2G
+ENCLAVE_STACK_SIZE=100K
+SP_SIGNING_KEY=service-provider/keys/sp_private_signing_key.pem

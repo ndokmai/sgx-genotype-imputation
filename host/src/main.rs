@@ -34,11 +34,14 @@ fn main() {
     };
     eprintln!("\tReference panel file:\t{}", ref_panel_file);
 
-    let mut ref_panel = RefPanelWriter::new(&Path::new(&ref_panel_file));
+    let (ref_panel_meta, ref_panel_block_iter) = load_ref_panel(Path::new(ref_panel_file));
+    let ref_panel_blocks = ref_panel_block_iter.collect::<Vec<_>>();
 
-    eprintln!("Host: n_blocks = {}", ref_panel.n_blocks());
-    eprintln!("Host: n_haps = {}", ref_panel.n_haps());
-    eprintln!("Host: n_markers = {}", ref_panel.n_markers());
+    assert_eq!(ref_panel_meta.n_blocks, ref_panel_blocks.len());
+
+    eprintln!("Host: n_blocks = {}", ref_panel_meta.n_blocks);
+    eprintln!("Host: n_haps = {}", ref_panel_meta.n_haps);
+    eprintln!("Host: n_markers = {}", ref_panel_meta.n_markers);
 
     let mut sp_stream = BufStream::new(tcp_keep_connecting(SocketAddr::from((
         IpAddr::from_str("127.0.0.1").unwrap(),
@@ -68,8 +71,10 @@ fn main() {
             .unwrap();
         eprintln!("Host: remote attestation successful!");
     }
+    eprintln!("Host: sending reference panel...");
 
-    ref_panel.write(&mut sp_stream).unwrap();
+    bincode::serialize_into(&mut sp_stream, &ref_panel_meta).unwrap();
+    bincode::serialize_into(&mut sp_stream, &ref_panel_blocks).unwrap();
 
     eprintln!("Host: done");
 }
