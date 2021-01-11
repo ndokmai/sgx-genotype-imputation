@@ -8,7 +8,6 @@ use smac_lite::*;
 mod ra {
     use super::*;
     use ra_sp::{AttestationResult, SpConfig, SpRaContext};
-    pub use sgx_crypto::random::{entropy_new, Rng};
     pub use sgx_crypto::tls_psk::client;
 
     const HOST_PORT: u16 = 7779;
@@ -26,8 +25,7 @@ mod ra {
         eprintln!("Client: connected to Host");
         eprintln!("Client: begin remote attestation...");
         let config = parse_config_file(CONFIG_FILE_PATH);
-        let mut entropy = entropy_new();
-        let context = SpRaContext::init(config, &mut entropy).unwrap();
+        let context = SpRaContext::init(config).unwrap();
         let result = context.do_attestation(&mut host_stream).unwrap();
         eprintln!("Client: remote attestation successful!");
         result
@@ -76,7 +74,10 @@ fn main() {
     eprintln!("\tResults directory:\t\t{}", results_dir);
 
     #[cfg(feature = "remote-attestation")]
-    let ra_result = remote_attestation(sp_ip_addr);
+    let mut context = {
+        let ra_result = remote_attestation(sp_ip_addr);
+        client::ClientTlsPskContext::new(ra_result.master_key)
+    };
 
     #[allow(unused_mut)]
     let mut sp_stream = tcp_keep_connecting(SocketAddr::from((
@@ -85,16 +86,9 @@ fn main() {
     )));
 
     eprintln!("Client: connected to SP");
+
     #[cfg(feature = "remote-attestation")]
-    let mut entropy = entropy_new();
-    #[cfg(feature = "remote-attestation")]
-    let mut rng = Rng::new(&mut entropy).unwrap();
-    #[cfg(feature = "remote-attestation")]
-    let config = client::config(&mut rng, &ra_result.master_key).unwrap();
-    #[cfg(feature = "remote-attestation")]
-    let mut ctx = client::context(&config).unwrap();
-    #[cfg(feature = "remote-attestation")]
-    let sp_stream = ctx.establish(&mut sp_stream, None).unwrap();
+    let sp_stream = context.establish(&mut sp_stream, None).unwrap();
 
     let mut sp_stream = BufStream::new(sp_stream);
 

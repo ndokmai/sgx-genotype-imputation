@@ -7,13 +7,12 @@ use smac_lite::*;
 #[cfg(feature = "remote-attestation")]
 mod ra {
     pub use ra_enclave::EnclaveRaContext;
-    pub use sgx_crypto::random::Rng;
     pub use sgx_crypto::tls_psk::server;
 }
 #[cfg(feature = "remote-attestation")]
 use ra::*;
 
-use std::io::{BufReader, Write};
+use std::io::Write;
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::str::FromStr;
 use std::sync::mpsc::channel;
@@ -42,14 +41,14 @@ fn main() {
     eprintln!("SP: accepted connection from Host at {:?}", host_socket);
 
     #[cfg(feature = "remote-attestation")]
-    let mut psk_callback = {
+    let mut context = {
         eprintln!("SP: begin remote-attestation...");
         let client_verification_key = include_str!("../keys/client_public_verification_key.pem");
         let client_verification_key = format!("{}\0", client_verification_key);
         let context = EnclaveRaContext::init(&client_verification_key).unwrap();
         let (_signing_key, master_key) = context.do_attestation(&mut host_stream).unwrap();
         eprintln!("SP: remote-attestation successful!");
-        server::callback(&master_key)
+        server::ServerTlsPskContext::new(master_key)
     };
 
     let mut host_stream = BufStream::new(host_stream);
@@ -66,13 +65,7 @@ fn main() {
     eprintln!("SP: accepted connection from Client at {:?}", client_socket);
 
     #[cfg(feature = "remote-attestation")]
-    let mut rng = Rng::new();
-    #[cfg(feature = "remote-attestation")]
-    let config = server::config(&mut rng, &mut psk_callback);
-    #[cfg(feature = "remote-attestation")]
-    let mut ctx = server::context(&config).unwrap();
-    #[cfg(feature = "remote-attestation")]
-    let client_stream = ctx.establish(&mut client_stream, None).unwrap();
+    let client_stream = context.establish(&mut client_stream, None).unwrap();
 
     eprintln!("SP: receiving reference panel from Host...");
     let ref_panel_meta: RefPanelMeta = bincode::deserialize_from(&mut host_stream).unwrap();
