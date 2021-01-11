@@ -18,10 +18,11 @@ mod ra {
     }
 
     pub fn remote_attestation(host_ip_addr: &str) -> AttestationResult {
-        let mut host_stream = tcp_keep_connecting(SocketAddr::from((
+        let host_stream = tcp_keep_connecting(SocketAddr::from((
             IpAddr::from_str(host_ip_addr).unwrap(),
             HOST_PORT,
         )));
+        let mut host_stream = BufStream::new(host_stream);
         eprintln!("Client: connected to Host");
         eprintln!("Client: begin remote attestation...");
         let config = parse_config_file(CONFIG_FILE_PATH);
@@ -85,12 +86,14 @@ fn main() {
         SP_PORT,
     )));
 
+
     eprintln!("Client: connected to SP");
 
     #[cfg(feature = "remote-attestation")]
     let sp_stream = context.establish(&mut sp_stream, None).unwrap();
 
     let mut sp_stream = BufStream::new(sp_stream);
+
 
     eprintln!("Client: start sending inputs");
 

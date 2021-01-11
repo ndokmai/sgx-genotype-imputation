@@ -15,7 +15,7 @@ smac_lite = { package = "smac", path = "../smac", default-features = false, opti
 smac = { path = "../smac", optional = true }
 bincode = "1.3"
 bufstream = "0.1"
-ra-sp = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "fc38f10672257face98b4bd369e88953d6656325", features = ["verbose"], optional = true }
-sgx-crypto = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "fc38f10672257face98b4bd369e88953d6656325", optional = true }
+ra-sp = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "4e8277293754b3c26d32ee76844749ef85bf96f9", features = ["verbose"], optional = true }
+sgx-crypto = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "4e8277293754b3c26d32ee76844749ef85bf96f9", optional = true }
 serde_json = { version = "1.0", optional = true }
 

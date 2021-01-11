@@ -20,8 +20,8 @@ rayon = "1.4"
 bufstream = "0.1"
 
 [target.'cfg(target_env = "sgx")'.dependencies]
-ra-enclave = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "fc38f10672257face98b4bd369e88953d6656325", optional = true }
-sgx-crypto = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "fc38f10672257face98b4bd369e88953d6656325", optional = true }
+ra-enclave = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "4e8277293754b3c26d32ee76844749ef85bf96f9", optional = true }
+sgx-crypto = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "4e8277293754b3c26d32ee76844749ef85bf96f9", optional = true }
 
 [package.metadata.fortanix-sgx]
 # stack size (in bytes) for each thread, the default stack size is 0x20000.

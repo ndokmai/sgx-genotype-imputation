@@ -28,8 +28,7 @@ fn main() {
         .build_global()
         .unwrap();
 
-    #[allow(unused_mut)]
-    let (mut host_stream, host_socket) = TcpListener::bind(SocketAddr::from((
+    let (host_stream, host_socket) = TcpListener::bind(SocketAddr::from((
         IpAddr::from_str("127.0.0.1").unwrap(),
         HOST_PORT,
     )))
@@ -37,6 +36,7 @@ fn main() {
     .accept()
     .unwrap();
 
+    let mut host_stream = BufStream::new(host_stream);
 
     eprintln!("SP: accepted connection from Host at {:?}", host_socket);
 
@@ -51,7 +51,6 @@ fn main() {
         server::ServerTlsPskContext::new(master_key)
     };
 
-    let mut host_stream = BufStream::new(host_stream);
 
     #[allow(unused_mut)]
     let (mut client_stream, client_socket) = TcpListener::bind(SocketAddr::from((
@@ -67,12 +66,13 @@ fn main() {
     #[cfg(feature = "remote-attestation")]
     let client_stream = context.establish(&mut client_stream, None).unwrap();
 
+    let mut client_stream = BufStream::new(client_stream);
+
     eprintln!("SP: receiving reference panel from Host...");
     let ref_panel_meta: RefPanelMeta = bincode::deserialize_from(&mut host_stream).unwrap();
     let ref_panel_blocks: Vec<Block> = bincode::deserialize_from(&mut host_stream).unwrap();
 
     eprintln!("SP: receiving bitmask from Client...");
-    let mut client_stream = BufStream::new(client_stream);
     let bitmask: Bitmask = bincode::deserialize_from(&mut client_stream).unwrap();
     let bitmask = bitmask.into_iter().collect::<Vec<_>>();
 
