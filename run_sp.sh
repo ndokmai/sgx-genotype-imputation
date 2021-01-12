@@ -17,7 +17,7 @@ host/target/release/smac-host $REF_PANEL &
 # start service provider
 if [[ $SGX -eq 1 ]]
 then
-    ftxsgx-runner --signature coresident $TARGET_SGX &
+    ftxsgx-runner --signature coresident $TARGET_SGX $N_THREADS &
 else
-    service-provider/target/release/smac-service-provider &
+    service-provider/target/release/smac-service-provider $N_THREADS &
 fi

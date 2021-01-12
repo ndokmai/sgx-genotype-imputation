@@ -20,11 +20,13 @@ use std::time::Instant;
 
 const HOST_PORT: u16 = 7777;
 const CLIENT_PORT: u16 = 7778;
-const N_THREADS: usize = 8;
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let num_threads = args[1].parse::<usize>().unwrap();
+    println!("args: {:?}", args);
     rayon::ThreadPoolBuilder::new()
-        .num_threads(N_THREADS)
+        .num_threads(num_threads)
         .build_global()
         .unwrap();
 
@@ -99,7 +101,6 @@ fn main() {
     });
 
     let n_threads = rayon::current_num_threads();
-
 
     while batch_size > 0 {
         let n = usize::min(batch_size, n_threads);
