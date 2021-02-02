@@ -1,7 +1,11 @@
 # SMac: Secure Genotype Imputation in Intel SGX
 ## Installation Requirements
 - Ubuntu 16.04/18.04
-- [Rust](https://www.rust-lang.org/tools/install)
+- [Rust Nightly](https://www.rust-lang.org/tools/install)
+    - To install the nightly channel, run
+    ```bash
+    rustup toolchain install nightly
+    ```
 - [Fortanix EDP](https://edp.fortanix.com/docs/installation/guide/) (for running in SGX mode)
     - For **Install AESM service**, we recommend installing the **Ubuntu 16.04/18.04** option. In addition, try installing
     ```bash
