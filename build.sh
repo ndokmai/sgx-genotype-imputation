@@ -11,7 +11,7 @@ echo "========================================"
 
 echo "===== Building Service Provider... ====="
 
-(cd service-provider && cargo +nightly build --release $SP_FLAGS $BIN_FLAGS -Zfeatures=itarget) &&
+(cd service-provider && cargo +nightly build --release $SP_FLAGS $BIN_FLAGS) &&
     if [[ $SGX -eq 1 ]]
     then
         SGX_THREADS=$(($N_THREADS+2))

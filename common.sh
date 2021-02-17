@@ -28,6 +28,10 @@ else
     fi
 fi
 
+if test -f "clang_env.sh"; then
+    source clang_env.sh
+fi
+
 if [[ ! -z "$SMAC_CLANG_DIR" ]]
 then
     export PATH=$SMAC_CLANG_DIR/bin/:$PATH

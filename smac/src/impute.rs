@@ -355,8 +355,8 @@ fn later_emission(
             .iter_mut()
             .zip(sprob_norecom.iter_mut())
             .zip(rhap_row.iter())
-            .for_each(|((prob, prob_norecom), &rhap)| {
-                let emi = single_emission(tsym, block_afreq, rhap.into());
+            .for_each(|((prob, prob_norecom), rhap)| {
+                let emi = single_emission(tsym, block_afreq, (*rhap).into());
                 *prob *= emi;
                 *prob_norecom *= emi;
             });
@@ -368,8 +368,8 @@ fn later_emission(
             .iter_mut()
             .zip(sprob_norecom.iter_mut())
             .zip(rhap_row.iter())
-            .for_each(|((prob, prob_norecom), &rhap)| {
-                let emi = single_emission(tsym, block_afreq, rhap.into());
+            .for_each(|((prob, prob_norecom), rhap)| {
+                let emi = single_emission(tsym, block_afreq, (*rhap).into());
                 *prob = cond.select(*prob * emi, *prob);
                 *prob_norecom = cond.select(*prob_norecom * emi, *prob_norecom);
             });
@@ -487,8 +487,8 @@ fn impute(
     let (p0, p1) = combined
         .iter()
         .zip(rhap_row.iter())
-        .fold((0., 0.), |mut acc, (&c, &rsym)| {
-            if rsym {
+        .fold((0., 0.), |mut acc, (&c, rsym)| {
+            if *rsym {
                 acc.1 += c;
                 acc
             } else {

@@ -1,7 +1,6 @@
 #![feature(const_fn)]
 #![feature(const_mut_refs)]
 #![feature(const_fn_transmute)]
-#![feature(seek_convenience)]
 #![feature(generic_associated_types)]
 #![feature(type_alias_impl_trait)]
 #![feature(iter_partition_in_place)]
@@ -24,9 +23,9 @@ pub mod tcp;
 
 pub use crate::block::*;
 pub use crate::client_input::*;
-pub use crate::symbol_vec::*;
 pub use crate::impute::*;
 pub use crate::ref_panel::*;
+pub use crate::symbol_vec::*;
 pub use crate::tcp::*;
 
 #[cfg(not(feature = "leak-resistant"))]

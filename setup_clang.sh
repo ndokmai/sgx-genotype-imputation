@@ -14,4 +14,4 @@ then
     tar -x -f $CLANG.tar.xz --skip-old-files -v
 fi
 )
-export SMAC_CLANG_DIR="$(realpath dependencies/$CLANG)"
+echo "export SMAC_CLANG_DIR=\"$(realpath dependencies/$CLANG)\"" > clang_env.sh
