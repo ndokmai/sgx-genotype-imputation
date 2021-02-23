@@ -15,7 +15,7 @@
     ```bash
     sudo service aesmd status
     ```
-- [Clang >= 3.8.0](https://releases.llvm.org/download.html) (for remote attestation)
+- [Clang 3.8.0](https://releases.llvm.org/download.html) (for remote attestation)
     - To automatically set up clang 3.8.0 locally, run `./setup_clang.sh`
 
 ## Configuration & Build
@@ -96,11 +96,11 @@ which saves the output to out/rust/. --->
 ## Client
 
 ### Input data format 
-SMac client takes two files as user input: index file and data file. These two files together
-encode a haplotype sequence that the user wishes to impute. Index file includes a binary
+SMac client takes two files as user input: bitmask file and symbol file. These two files together
+encode a haplotype sequence that the user wishes to impute. Bitmast file includes a binary
 vector (0 or 1 in each line) indicating whether the corresponding genetic variant in the
 reference panel (M3VCF file) is included in the user's data. Note that the length of this
-vector should match the number of genetic variants in the reference panel. Data file includes
+vector should match the number of genetic variants in the reference panel. Symbol file includes
 a vector of -1 (missing), 0 (reference allele), or 1 (alternative allele), one for each line.
 These correspond to the user's data values at the nonzero indices in the index file. 
 Example input files (`input_ind.txt` and `input_dat.txt`) as well as sample scripts for
@@ -111,12 +111,12 @@ generating random input can be found in [scripts/](scripts/).
 
 To start Client on Client Machine, run
 ```bash
-./run_client.sh <service provider ip addr> <input index txt file> <input data txt file> <output txt file>
+./run_client.sh <service provider ip addr> <bitmask file> <symbols batch dir> <results dir>
 ```
-where `<input index txt file>` and `<input data txt file>` are formatted according to [input data format](#input-data-format). `<output txt file>` is the name of the output text file to be created.  For example, 
+where `<bitmask file>` are formatted according to [input data format](#input-data-format). `<symbols batch dir>` is a directory containing all symbol files for batch processing, and `<results dir>` is a directly to save results.  For example, 
 
 ```bash
-./run_client.sh 127.0.0.1 smac/test_data/large_input_ind.txt smac/test_data/large_input_dat.txt output.txt
+./run_client.sh 127.0.0.1 smac/test_data/large_input_bitmask.txt smac/test_data/batch results
 ```
 ## Service Provider
 
