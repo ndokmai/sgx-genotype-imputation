@@ -12,33 +12,21 @@ fn main() {
     let n = 10000;
     let n_fold = 1000;
     let alpha = 0.05;
-    if_else_tests(n, alpha);
+    nested_if_else_tests(n, alpha);
     f32_tests(n, alpha, n_fold);
     f64_tests(n, alpha, n_fold);
     const_select_tests(n, alpha);
     fixed_tests(n, alpha, n_fold);
 }
 
-fn if_else_tests(n: usize, alpha: f64) {
-    let title = "if-else";
+fn nested_if_else_tests(n: usize, alpha: f64) {
+    let title = "nested-if-else";
     let title = format!("===== {} z-test =====", title);
     println!("{}", title.bold());
     println!("N = {}; alpha = {}", n, alpha);
-    let x_str = "time(if { EXPENSIVE })";
-    let u_str = "time(else { CHEAP })";
-    println!("H_0: {} == {}", x_str, u_str);
-    println!("H_1: {} != {}", x_str, u_str);
-    let f = |x| {
-        if x {
-            (0..100).map(|v| v as f64).sum::<f64>()
-        } else {
-            (0..1).map(|v| v as f64).sum::<f64>()
-        }
-    };
-    let f_baseline = || f(true);
-    let f_test = || f(false);
-    let (baseline, test) = time_measure_all(n, 1, f_baseline, f_test);
-    ztest(baseline, test, alpha, x_str, u_str);
+    nested_if_else_template(true, false, n, alpha);
+    nested_if_else_template(false, true, n, alpha);
+    nested_if_else_template(false, false, n, alpha);
     println!("");
     println!("");
 }
@@ -113,6 +101,37 @@ fn fixed_tests(n: usize, alpha: f64, n_fold: usize) {
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
 }
 
+fn nested_if_else_template(first: bool, second: bool, n: usize, alpha: f64) {
+    println!("-------------------");
+    let x_str = format!("time(if {{ if {{ EXPENSIVE }}}})");
+    let first_str = if first { "if" } else { "else" };
+    let second_str = if second { "if" } else { "else" };
+    let u_str = format!("time({} {{ {} {{ CHEAP }}}})", first_str, second_str);
+    println!("H_0: {} == {}", x_str, u_str);
+    println!("H_1: {} != {}", x_str, u_str);
+
+    let f = |cond0, cond1| {
+        if cond0 {
+            if cond1 {
+                (0..1000).map(|v| v as f64).sum::<f64>()
+            } else {
+                (0..100).map(|v| v as f64).sum::<f64>()
+            }
+        } else {
+            if cond1 {
+                (0..10).map(|v| v as f64).sum::<f64>()
+            } else {
+                (0..1).map(|v| v as f64).sum::<f64>()
+            }
+        }
+    };
+
+    let f_baseline = || f(true, true);
+    let f_test = || f(first, second);
+    let (baseline, test) = time_measure_all(n, 1, f_baseline, f_test);
+    ztest(baseline, test, alpha, &x_str, &u_str);
+}
+
 fn const_select_template(first: bool, second: bool, n: usize, alpha: f64) {
     use timing_shield::TpBool;
     println!("-------------------");
@@ -151,7 +170,7 @@ fn op_template<N: Copy>(
 ) {
     let title = format!("===== {} `{}` z-test =====", title, op);
     println!("{}", title.bold());
-    println!("N = {}; n_fold = {}, alpha = {}", n, n_fold, alpha);
+    println!("N = {}; n_fold = {}; alpha = {}", n, n_fold, alpha);
     let x_str = format!("time({} {} {})", a.1, op, b.1);
     let u_str = format!("time({} {} {})", a.1, op, c.1);
     println!("H_0: {} == {}", x_str, u_str);
@@ -227,9 +246,9 @@ fn ztest(baseline: Vec<f64>, test: Vec<f64>, alpha: f64, x_str: &str, u_str: &st
     println!("std-dev = {:.3}", s);
     println!("p-value = {:.3}", p);
     if p < alpha {
-        println!("{}", "Reject null hypothesis.".red().bold());
+        println!("{}", "Timing leakage detected.".red().bold());
     } else {
-        println!("{}", "Do NOT reject null hypothesis.".green().bold());
+        println!("{}", "Timing leakage NOT detected.".green().bold());
     }
 }
 
