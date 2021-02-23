@@ -18,6 +18,13 @@
 - [Clang 3.8.0](https://releases.llvm.org/download.html) (for remote attestation)
     - To automatically set up clang 3.8.0 locally, run `./setup_clang.sh`
 
+## Z-tests for timing leakage
+To test whether arithmetic primitives leak timing discrepancies, run from within [smac/](smac/),
+```bash
+cargo +nightly run --bin timing_leak --release
+```
+SMac-lite relies on `nested-if-else`, `f32`, and `f64`, while SMac relies on `fixed-select` and `fixed-time-ln` for computation involving sensitive data. It is normal for `nested-if-else`, `f32`, and `f64` to exhibit some leakage, while `fixed-select` and `fixed-time-ln` should **NOT** leak. 
+
 ## Configuration & Build
 Edit the following parameters in [config.sh](config.sh) to configure SMac:
 - `LITE`: SMac or SMac-lite
@@ -28,7 +35,7 @@ Edit the following parameters in [config.sh](config.sh) to configure SMac:
     - `1`: SGX mode; Fortanix EDP must be installed and configured properly
 - `RA`: remote attestation
     - `0`: disable remote attestation 
-    - `1`: enable remote attestation 
+    - `1`: enable remote attestation; this has not effect if `SGX=0`.
 - `N_THREADS`: Number of threads for batch processing; 1 thread per 1 input.
 - `ENCLAVE_HEAP_SIZE`: enclave heap size; if the enclave fails while starting, try increasing this number.
 
@@ -37,16 +44,7 @@ Rebuild for every change in configuration.
 Next, build by running
 ```bash
 ./build.sh
-
 ```
-
-## Z-tests for timing leakage
-To test if arithmetic primitives leak timing discrepancies, run from within [smac/](smac/),
-```bash
-cargo +nightly run --bin timing_leak --release
-```
-SMac-lite uses `if-else`, `f32`, and `f64`, while SMac uses  `fixed-select` and `fixed-time-ln` for computation involving sensitive data.
-
 
 ### Remote attestation configuration
 If remote attestation is enabled, follow the steps below to ensure access to Intel Attestation Service.
@@ -61,7 +59,7 @@ To locally test whether the code can run successfully according to the configura
 ```bash
 ./test.sh
 ```
-The script will test the code with sample data located at [smac/test_data/](smac/test_data/). The output of SMac will be saved at `output.txt`.
+The script will test the code with all the sample data files located at [smac/test_data/](smac/test_data/). The outputs of SMac will be saved in [results/](results/).
 <!--- To test on chr20 chunk1, first follow the instruction on https://github.com/statgen/Minimac4
 to install minimac4. Replace the "minimac" executable in minimac/test_chr20_mmac.sh
 with the correct path. Then run the script (test_chr20_mmac.sh) which saves the output to
