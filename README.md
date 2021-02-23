@@ -29,7 +29,8 @@ Edit the following parameters in [config.sh](config.sh) to configure SMac:
 - `RA`: remote attestation
     - `0`: disable remote attestation 
     - `1`: enable remote attestation 
-- `ENCLAVE_HEAP_SIZE`: enclave heap size in bytes; if the enclave fails while starting, try increasing this number.
+- `N_THREADS`: Number of threads for batch processing; 1 thread per 1 input.
+- `ENCLAVE_HEAP_SIZE`: enclave heap size; if the enclave fails while starting, try increasing this number.
 
 Rebuild for every change in configuration. 
 
@@ -38,6 +39,15 @@ Next, build by running
 ./build.sh
 
 ```
+
+## Z-tests for timing leakage
+To test if arithmetic primitives leak timing discrepancies, run from within [smac/](smac/),
+```bash
+cargo +nightly run --bin timing_leak --release
+```
+SMac-lite uses `if-else`, `f32`, and `f64`, while SMac uses  `fixed-select` and `fixed-time-ln` for computation involving sensitive data.
+
+
 ### Remote attestation configuration
 If remote attestation is enabled, follow the steps below to ensure access to Intel Attestation Service.
 1. Sign up for a Development Access account at https://api.portal.trustedservices.intel.com/EPID-attestation. Make sure that the Name Base Mode is Linkable Quote. Take note of "SPID", "Primary key", and "Secondary key".

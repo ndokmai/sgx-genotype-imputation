@@ -15,7 +15,7 @@ pub mod block;
 pub mod client_input;
 pub mod impute;
 #[cfg(feature = "leak-resistant")]
-mod ln_fixed;
+pub mod ln_fixed;
 pub mod ref_panel;
 mod symbol;
 pub mod symbol_vec;

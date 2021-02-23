@@ -5,7 +5,7 @@ LITE=0
 SGX=1
 ## 0 to disable remote attestation; 1 for remote attestation
 RA=1
-
+## Number of threads; 1 thread per 1 input
 N_THREADS=4
 
 # Enclave configuration
