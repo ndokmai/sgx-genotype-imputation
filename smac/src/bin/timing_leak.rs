@@ -49,17 +49,17 @@ fn f32_tests(n: usize, alpha: f64, n_fold: usize) {
     let b = (1f32, "1.0");
     let c = (1e-38f32, "VERY_SMALL");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "+");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "-");
 
     //let f = |x, y| x * y;
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "*");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
 }
 
@@ -69,16 +69,16 @@ fn f64_tests(n: usize, alpha: f64, n_fold: usize) {
     let b = (1f64, "1.0");
     let c = (1e-320f64, "VERY_SMALL");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "+");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "-");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "*");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
 }
 
@@ -100,16 +100,16 @@ fn fixed_tests(n: usize, alpha: f64, n_fold: usize) {
     let b = (F::ONE, "ln(0.0)");
     let c = (F::NAN, "ln(VERY_LARGE)");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "+ (lse)");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "- (lde)");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "*");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / y);
+    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / black_box(y));
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
 }
 
