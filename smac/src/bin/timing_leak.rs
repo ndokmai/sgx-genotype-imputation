@@ -9,26 +9,30 @@ use std::hint::black_box;
 type F = TpLnFixed<typenum::U20>;
 
 fn main() {
-    let n = 10000;
-    let n_fold = 1000;
+    let n = 100000;
+    let n_fold = 10;
     let alpha = 0.05;
-    nested_if_else_tests(n, alpha);
+    if_else_tests(n, alpha, n_fold);
     f32_tests(n, alpha, n_fold);
     f64_tests(n, alpha, n_fold);
     const_select_tests(n, alpha);
     fixed_tests(n, alpha, n_fold);
 }
 
-fn nested_if_else_tests(n: usize, alpha: f64) {
-    let title = "nested-if-else";
+fn if_else_tests(n: usize, alpha: f64, n_fold: usize) {
+    let title = "if-else";
     let title = format!("===== {} z-test =====", title);
     println!("{}", title.bold());
     println!("N = {}; alpha = {}", n, alpha);
-    nested_if_else_template(true, false, n, alpha);
-    nested_if_else_template(false, true, n, alpha);
-    nested_if_else_template(false, false, n, alpha);
+    if_else_template(n, n_fold, alpha);
     println!("");
     println!("");
+}
+
+macro_rules! op {
+    ($o: tt, $n_fold: expr) => {
+    |x, y| (0..$n_fold).fold(x, |_, _| black_box(black_box(x) $o black_box(y)))
+    }
 }
 
 fn f32_tests(n: usize, alpha: f64, n_fold: usize) {
@@ -37,17 +41,16 @@ fn f32_tests(n: usize, alpha: f64, n_fold: usize) {
     let b = (1f32, "1.0");
     let c = (1e-38f32, "VERY_SMALL");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + black_box(y));
+    let f = op! {+, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "+");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - black_box(y));
+    let f = op! {-, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "-");
 
-    //let f = |x, y| x * y;
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * black_box(y));
+    let f = op! {*, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "*");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / black_box(y));
+    let f = op! {/, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
 }
 
@@ -57,16 +60,16 @@ fn f64_tests(n: usize, alpha: f64, n_fold: usize) {
     let b = (1f64, "1.0");
     let c = (1e-320f64, "VERY_SMALL");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + black_box(y));
+    let f = op! {+, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "+");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - black_box(y));
+    let f = op! {-, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "-");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * black_box(y));
+    let f = op! {*, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "*");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / black_box(y));
+    let f = op! {/, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
 }
 
@@ -88,48 +91,42 @@ fn fixed_tests(n: usize, alpha: f64, n_fold: usize) {
     let b = (F::ONE, "ln(0.0)");
     let c = (F::NAN, "ln(VERY_LARGE)");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc + black_box(y));
-    op_template(n, n_fold, alpha, a, b, c, f, title, "+ (lse)");
+    let f = op! {+, n_fold};
+    op_template(n, n_fold, alpha, a, b, c, f, title, "+");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc - black_box(y));
-    op_template(n, n_fold, alpha, a, b, c, f, title, "- (lde)");
+    let f = op! {-, n_fold};
+    op_template(n, n_fold, alpha, a, b, c, f, title, "-");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc * black_box(y));
+    let f = op! {*, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "*");
 
-    let f = |x, y| (0..n_fold).fold(x, |acc, _| acc / black_box(y));
+    let f = op! {/, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
 }
 
-fn nested_if_else_template(first: bool, second: bool, n: usize, alpha: f64) {
+fn if_else_template(n: usize, n_fold: usize, alpha: f64) {
     println!("-------------------");
-    let x_str = format!("time(if {{ if {{ EXPENSIVE }}}})");
-    let first_str = if first { "if" } else { "else" };
-    let second_str = if second { "if" } else { "else" };
-    let u_str = format!("time({} {{ {} {{ CHEAP }}}})", first_str, second_str);
+    let x_str = format!("time(if {{ EXPENSIVE }})");
+    let u_str = format!("time(else {{ CHEAP }})");
     println!("H_0: {} == {}", x_str, u_str);
     println!("H_1: {} != {}", x_str, u_str);
 
-    let f = |cond0, cond1| {
-        if cond0 {
-            if cond1 {
-                (0..1000).map(|v| v as f64).sum::<f64>()
-            } else {
-                (0..100).map(|v| v as f64).sum::<f64>()
-            }
-        } else {
-            if cond1 {
-                (0..10).map(|v| v as f64).sum::<f64>()
-            } else {
-                (0..1).map(|v| v as f64).sum::<f64>()
-            }
-        }
+    let f = |cond| {
+        (0..n_fold).fold(1.0, |_, _| {
+            black_box({
+                if cond {
+                    black_box(1.0) * black_box(1e-38f32)
+                } else {
+                    black_box(1.0) * black_box(1.0)
+                }
+            })
+        });
     };
 
-    let f_baseline = || f(true, true);
-    let f_test = || f(first, second);
-    let (baseline, test) = time_measure_all(n, 1, f_baseline, f_test);
-    ztest(baseline, test, alpha, &x_str, &u_str);
+    let f_baseline = || f(true);
+    let f_test = || f(false);
+    let (baseline, test) = time_measure_all(n, n_fold, f_baseline, f_test);
+    ztest(&baseline[..], &test[..], alpha, &x_str, &u_str);
 }
 
 fn const_select_template(first: bool, second: bool, n: usize, alpha: f64) {
@@ -144,17 +141,17 @@ fn const_select_template(first: bool, second: bool, n: usize, alpha: f64) {
         F::select_from_4_f32(
             cond0,
             cond1,
-            (0..1000).map(|v| v as f32).sum::<f32>(),
-            (0..100).map(|v| v as f32).sum::<f32>(),
-            (0..10).map(|v| v as f32).sum::<f32>(),
-            (0..1).map(|v| v as f32).sum::<f32>(),
+            (0..1000).map(|v| black_box(v as f32)).sum::<f32>(),
+            (0..100).map(|v| black_box(v as f32)).sum::<f32>(),
+            (0..10).map(|v| black_box(v as f32)).sum::<f32>(),
+            (0..1).map(|v| black_box(v as f32)).sum::<f32>(),
         )
     };
 
     let f_baseline = || f(TpBool::protect(true), TpBool::protect(true));
     let f_test = || f(TpBool::protect(first), TpBool::protect(second));
     let (baseline, test) = time_measure_all(n, 1, f_baseline, f_test);
-    ztest(baseline, test, alpha, &x_str, &u_str);
+    ztest(&baseline[..], &test[..], alpha, &x_str, &u_str);
 }
 
 fn op_template<N: Copy>(
@@ -167,10 +164,10 @@ fn op_template<N: Copy>(
     f: impl Fn(N, N) -> N + Copy,
     title: &str,
     op: &str,
-) {
+) -> (Vec<f64>, Vec<f64>) {
     let title = format!("===== {} `{}` z-test =====", title, op);
     println!("{}", title.bold());
-    println!("N = {}; n_fold = {}; alpha = {}", n, n_fold, alpha);
+    println!("N = {}; alpha = {}", n, alpha);
     let x_str = format!("time({} {} {})", a.1, op, b.1);
     let u_str = format!("time({} {} {})", a.1, op, c.1);
     println!("H_0: {} == {}", x_str, u_str);
@@ -178,9 +175,10 @@ fn op_template<N: Copy>(
     let f_baseline = move || f(a.0, b.0);
     let f_test = move || f(a.0, c.0);
     let (baseline, test) = time_measure_all(n, n_fold, f_baseline, f_test);
-    ztest(baseline, test, alpha, &x_str, &u_str);
+    ztest(&baseline[..], &test[..], alpha, &x_str, &u_str);
     println!("");
     println!("");
+    (baseline, test)
 }
 
 fn time_measure_all<N>(
@@ -228,7 +226,7 @@ fn time_measure_single<N>(f: impl Fn() -> N) -> u64 {
     }
 }
 
-fn ztest(baseline: Vec<f64>, test: Vec<f64>, alpha: f64, x_str: &str, u_str: &str) {
+fn ztest(baseline: &[f64], test: &[f64], alpha: f64, x_str: &str, u_str: &str) {
     let baseline = denoise(baseline);
     let test = denoise(test);
 
@@ -253,11 +251,12 @@ fn ztest(baseline: Vec<f64>, test: Vec<f64>, alpha: f64, x_str: &str, u_str: &st
 }
 
 // remove anything beyond 5 std_dev from mean
-fn denoise(v: Vec<f64>) -> Vec<f64> {
-    let x = v.as_slice().mean();
-    let s = v.as_slice().std_dev();
+fn denoise(v: &[f64]) -> Vec<f64> {
+    let x = v.mean();
+    let s = v.std_dev();
     let k = 5.;
-    v.into_iter()
+    v.iter()
+        .cloned()
         .filter(|&a| a < x + s * k && a > x - s * k)
         .collect()
 }
