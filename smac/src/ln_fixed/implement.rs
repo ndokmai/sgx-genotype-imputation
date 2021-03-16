@@ -124,7 +124,7 @@ macro_rules! impl_arith {
     };
 }
 
-impl_arith! {add, lse, Add}
+impl_arith!(add, lse, Add);
 impl_arith!(sub, lme, Sub);
 impl_arith!(mul, add, Mul);
 impl_arith!(div, sub, Div);

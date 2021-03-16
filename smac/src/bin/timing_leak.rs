@@ -9,14 +9,28 @@ use std::hint::black_box;
 type F = TpLnFixed<typenum::U20>;
 
 fn main() {
-    let n = 100000;
-    let n_fold = 10;
+    let n = 10000;
+    let n_fold = 1000;
     let alpha = 0.05;
     if_else_tests(n, alpha, n_fold);
     f32_tests(n, alpha, n_fold);
     f64_tests(n, alpha, n_fold);
-    const_select_tests(n, alpha);
+    const_select_tests(n, alpha, n_fold);
     fixed_tests(n, alpha, n_fold);
+}
+
+fn save_results(baseline: Vec<f64>, test: Vec<f64>, title: &str) {
+    use std::fs::File;
+    use std::io::Write;
+    let f_baseline_name = format!("results/{}_baseline.txt", title);
+    let mut f_baseline = File::create(f_baseline_name).unwrap();
+    baseline
+        .into_iter()
+        .for_each(|v| writeln!(&mut f_baseline, "{}", v).unwrap());
+    let f_test_name = format!("results/{}_test.txt", title);
+    let mut f_test = File::create(f_test_name).unwrap();
+    test.into_iter()
+        .for_each(|v| writeln!(&mut f_test, "{}", v).unwrap());
 }
 
 fn if_else_tests(n: usize, alpha: f64, n_fold: usize) {
@@ -48,7 +62,8 @@ fn f32_tests(n: usize, alpha: f64, n_fold: usize) {
     op_template(n, n_fold, alpha, a, b, c, f, title, "-");
 
     let f = op! {*, n_fold};
-    op_template(n, n_fold, alpha, a, b, c, f, title, "*");
+    let (baseline, test) = op_template(n, n_fold, alpha, a, b, c, f, title, "*");
+    save_results(baseline, test, format!("{}_{}", title, "mult").as_str());
 
     let f = op! {/, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
@@ -73,14 +88,15 @@ fn f64_tests(n: usize, alpha: f64, n_fold: usize) {
     op_template(n, n_fold, alpha, a, b, c, f, title, "/");
 }
 
-fn const_select_tests(n: usize, alpha: f64) {
+fn const_select_tests(n: usize, alpha: f64, n_fold: usize) {
     let title = "fixed-select";
     let title = format!("===== {} z-test =====", title);
     println!("{}", title.bold());
     println!("N = {}; alpha = {}", n, alpha);
-    const_select_template(true, false, n, alpha);
-    const_select_template(false, true, n, alpha);
-    const_select_template(false, false, n, alpha);
+    const_select_template(true, false, n, n_fold, alpha);
+    const_select_template(false, true, n, n_fold, alpha);
+    let (baseline, test) = const_select_template(false, false, n, n_fold, alpha);
+    save_results(baseline, test, "fixed-select");
     println!("");
     println!("");
 }
@@ -92,7 +108,8 @@ fn fixed_tests(n: usize, alpha: f64, n_fold: usize) {
     let c = (F::NAN, "ln(VERY_LARGE)");
 
     let f = op! {+, n_fold};
-    op_template(n, n_fold, alpha, a, b, c, f, title, "+");
+    let (baseline, test) = op_template(n, n_fold, alpha, a, b, c, f, title, "+");
+    save_results(baseline, test, format!("{}_{}", title, "add").as_str());
 
     let f = op! {-, n_fold};
     op_template(n, n_fold, alpha, a, b, c, f, title, "-");
@@ -113,12 +130,10 @@ fn if_else_template(n: usize, n_fold: usize, alpha: f64) {
 
     let f = |cond| {
         (0..n_fold).fold(1.0, |_, _| {
-            black_box({
-                if cond {
-                    black_box(1.0) * black_box(1e-38f32)
-                } else {
-                    black_box(1.0) * black_box(1.0)
-                }
+            black_box(if black_box(cond) {
+                black_box(1.0) * black_box(1e-38f32)
+            } else {
+                black_box(1.0) * black_box(1.0)
             })
         });
     };
@@ -126,10 +141,17 @@ fn if_else_template(n: usize, n_fold: usize, alpha: f64) {
     let f_baseline = || f(true);
     let f_test = || f(false);
     let (baseline, test) = time_measure_all(n, n_fold, f_baseline, f_test);
-    ztest(&baseline[..], &test[..], alpha, &x_str, &u_str);
+    let (baseline, test) = ztest(baseline, test, alpha, &x_str, &u_str);
+    save_results(baseline, test, "if-else");
 }
 
-fn const_select_template(first: bool, second: bool, n: usize, alpha: f64) {
+fn const_select_template(
+    first: bool,
+    second: bool,
+    n: usize,
+    n_fold: usize,
+    alpha: f64,
+) -> (Vec<f64>, Vec<f64>) {
     use timing_shield::TpBool;
     println!("-------------------");
     let x_str = format!("time({}-{} {{ EXPENSIVE }})", true, true);
@@ -138,20 +160,22 @@ fn const_select_template(first: bool, second: bool, n: usize, alpha: f64) {
     println!("H_1: {} != {}", x_str, u_str);
 
     let f = |cond0, cond1| {
-        F::select_from_4_f32(
-            cond0,
-            cond1,
-            (0..1000).map(|v| black_box(v as f32)).sum::<f32>(),
-            (0..100).map(|v| black_box(v as f32)).sum::<f32>(),
-            (0..10).map(|v| black_box(v as f32)).sum::<f32>(),
-            (0..1).map(|v| black_box(v as f32)).sum::<f32>(),
-        )
+        (0..n_fold).fold(TpLnFixed::ONE, |_, _| {
+            black_box(F::select_from_4_f32(
+                black_box(cond0),
+                black_box(cond1),
+                black_box(1.0) * black_box(1e-38f32),
+                black_box(1.0) * black_box(1.0),
+                black_box(1.0) * black_box(1.0),
+                black_box(1.0) * black_box(1.0),
+            ))
+        });
     };
 
     let f_baseline = || f(TpBool::protect(true), TpBool::protect(true));
     let f_test = || f(TpBool::protect(first), TpBool::protect(second));
-    let (baseline, test) = time_measure_all(n, 1, f_baseline, f_test);
-    ztest(&baseline[..], &test[..], alpha, &x_str, &u_str);
+    let (baseline, test) = time_measure_all(n, n_fold, f_baseline, f_test);
+    ztest(baseline, test, alpha, &x_str, &u_str)
 }
 
 fn op_template<N: Copy>(
@@ -175,7 +199,7 @@ fn op_template<N: Copy>(
     let f_baseline = move || f(a.0, b.0);
     let f_test = move || f(a.0, c.0);
     let (baseline, test) = time_measure_all(n, n_fold, f_baseline, f_test);
-    ztest(&baseline[..], &test[..], alpha, &x_str, &u_str);
+    let (baseline, test) = ztest(baseline, test, alpha, &x_str, &u_str);
     println!("");
     println!("");
     (baseline, test)
@@ -226,13 +250,19 @@ fn time_measure_single<N>(f: impl Fn() -> N) -> u64 {
     }
 }
 
-fn ztest(baseline: &[f64], test: &[f64], alpha: f64, x_str: &str, u_str: &str) {
+fn ztest(
+    baseline: Vec<f64>,
+    test: Vec<f64>,
+    alpha: f64,
+    x_str: &str,
+    u_str: &str,
+) -> (Vec<f64>, Vec<f64>) {
     let baseline = denoise(baseline);
     let test = denoise(test);
 
     let x = baseline.as_slice().mean();
-    let s = baseline.population_std_dev();
-    let u = test.mean();
+    let s = baseline.as_slice().population_std_dev();
+    let u = test.as_slice().mean();
     let z = (u - x) / s;
     let d = Normal::new(0., 1.).unwrap();
     let p = d.cdf(-z.abs()) * 2.;
@@ -248,15 +278,15 @@ fn ztest(baseline: &[f64], test: &[f64], alpha: f64, x_str: &str, u_str: &str) {
     } else {
         println!("{}", "Timing leakage NOT detected.".green().bold());
     }
+    (baseline, test)
 }
 
 // remove anything beyond 5 std_dev from mean
-fn denoise(v: &[f64]) -> Vec<f64> {
-    let x = v.mean();
-    let s = v.std_dev();
+fn denoise(v: Vec<f64>) -> Vec<f64> {
+    let x = v.as_slice().mean();
+    let s = v.as_slice().std_dev();
     let k = 5.;
-    v.iter()
-        .cloned()
+    v.into_iter()
         .filter(|&a| a < x + s * k && a > x - s * k)
         .collect()
 }
