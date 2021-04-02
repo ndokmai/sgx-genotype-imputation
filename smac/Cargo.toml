@@ -23,13 +23,12 @@ rayon = "1.4"
 num-traits = "0.2"
 flate2 = "1.0.18"
 generic-array = { version = "0.14", features = ["serde"] }
-#aes-gcm = { version = "0.6", features = ["aes"] }
 serde = { version = "1.0", features = ["derive"] }
 paste = { version = "1.0", optional = true }
 typenum = { version = "1.12", optional = true}
 timing-shield = { git = "https://github.com/ndokmai/rust-timing-shield.git", optional = true }
-statrs = "0.13"
 colored = "2.0"
+rustats = "0.1"
 
 [dev-dependencies]
 pipe = { version = "0.3", features = ["bidirectional"] }

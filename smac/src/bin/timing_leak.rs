@@ -1,8 +1,6 @@
 #![feature(test)]
 use colored::*;
 use smac::ln_fixed::TpLnFixed;
-use statrs::distribution::{Normal, Univariate};
-use statrs::statistics::Statistics;
 use std::arch::x86_64::_rdtsc;
 use std::hint::black_box;
 
@@ -20,8 +18,8 @@ fn main() {
         false
     };
 
-    let n = 100000;
-    let n_fold = 100;
+    let n = 100;
+    let n_fold = 1000000;
     let alpha = 0.05;
     if_else_tests(n, n_fold, alpha, save);
     f32_tests(n, n_fold, alpha, save);
@@ -46,7 +44,7 @@ fn save_results(baseline: Vec<f64>, test: Vec<f64>, title: &str) {
 
 fn if_else_tests(n: usize, n_fold: usize, alpha: f64, save: bool) {
     let title = "if-else";
-    let title = format!("===== {} z-test =====", title);
+    let title = format!("===== {} rank-sum test =====", title);
     println!("{}", title.bold());
     println!("N = {}; alpha = {}", n, alpha);
     println!("-------------------");
@@ -71,8 +69,8 @@ fn if_else_tests(n: usize, n_fold: usize, alpha: f64, save: bool) {
 
     let f_baseline = || f(true);
     let f_test = || f(false);
-    let (baseline, test) = time_measure_all(n, n_fold, f_baseline, f_test);
-    let (baseline, test) = ztest(baseline, test, alpha, &x_str, &u_str);
+    let (baseline, test) = time_measure_all(n, f_baseline, f_test);
+    let (baseline, test) = htest(baseline, test, alpha, n_fold);
     if save {
         save_results(baseline, test, "if-else");
     }
@@ -128,7 +126,7 @@ fn f32_tests(n: usize, n_fold: usize, alpha: f64, save: bool) {
 
 fn const_select_tests(n: usize, n_fold: usize, alpha: f64, save: bool) {
     let title = "fixed-select";
-    let title = format!("===== {} z-test =====", title);
+    let title = format!("===== {} rank-sum test =====", title);
     println!("{}", title.bold());
     println!("N = {}; alpha = {}", n, alpha);
     const_select_template(true, false, n, n_fold, alpha);
@@ -205,8 +203,8 @@ fn const_select_template(
 
     let f_baseline = || f(TpBool::protect(true), TpBool::protect(true));
     let f_test = || f(TpBool::protect(first), TpBool::protect(second));
-    let (baseline, test) = time_measure_all(n, n_fold, f_baseline, f_test);
-    ztest(baseline, test, alpha, &x_str, &u_str)
+    let (baseline, test) = time_measure_all(n, f_baseline, f_test);
+    htest(baseline, test, alpha, n_fold)
 }
 
 fn op_template<N: Copy>(
@@ -220,7 +218,7 @@ fn op_template<N: Copy>(
     title: &str,
     op: &str,
 ) -> (Vec<f64>, Vec<f64>) {
-    let title = format!("===== {} `{}` z-test =====", title, op);
+    let title = format!("===== {} `{}` rank-sum test =====", title, op);
     println!("{}", title.bold());
     println!("N = {}; alpha = {}", n, alpha);
     let x_str = format!("time({} {} {})", a.1, op, b.1);
@@ -229,8 +227,8 @@ fn op_template<N: Copy>(
     println!("H_1: {} != {}", x_str, u_str);
     let f_baseline = move || f(a.0, b.0);
     let f_test = move || f(a.0, c.0);
-    let (baseline, test) = time_measure_all(n, n_fold, f_baseline, f_test);
-    let (baseline, test) = ztest(baseline, test, alpha, &x_str, &u_str);
+    let (baseline, test) = time_measure_all(n, f_baseline, f_test);
+    let (baseline, test) = htest(baseline, test, alpha, n_fold);
     println!("");
     println!("");
     (baseline, test)
@@ -238,24 +236,15 @@ fn op_template<N: Copy>(
 
 fn time_measure_all<N>(
     n_rounds: usize,
-    n_fold: usize,
     f_baseline: impl Fn() -> N,
     f_test: impl Fn() -> N,
-) -> (Vec<f64>, Vec<f64>) {
+) -> (Vec<u64>, Vec<u64>) {
     let mut baseline = Vec::with_capacity(n_rounds);
     let mut test = Vec::with_capacity(n_rounds);
-    // warm up
-    for _ in 0..n_rounds {
-        f_baseline();
-        f_test();
-    }
-
-    for _ in 0..n_rounds {
-        baseline.push(time_measure_single(&f_baseline) as f64);
-        test.push(time_measure_single(&f_test) as f64);
-    }
-    let baseline = baseline.into_iter().map(|v| v / n_fold as f64).collect();
-    let test = test.into_iter().map(|v| v / n_fold as f64).collect();
+    black_box(for _ in 0..n_rounds {
+        baseline.push(time_measure_single(&f_baseline));
+        test.push(time_measure_single(&f_test));
+    });
     (baseline, test)
 }
 
@@ -267,43 +256,18 @@ fn time_measure_single<N>(f: impl Fn() -> N) -> u64 {
     }
 }
 
-fn ztest(
-    baseline: Vec<f64>,
-    test: Vec<f64>,
-    alpha: f64,
-    x_str: &str,
-    u_str: &str,
-) -> (Vec<f64>, Vec<f64>) {
-    let baseline = denoise(baseline);
-    let test = denoise(test);
-
-    let x = baseline.as_slice().mean();
-    let s = baseline.as_slice().population_std_dev();
-    let u = test.as_slice().mean();
-    let z = (u - x) / s;
-    let d = Normal::new(0., 1.).unwrap();
-    let p = d.cdf(-z.abs()) * 2.;
-
-    let x_str = format!("{} = {:.4} cycles", x_str, x);
-    let u_str = format!("{} = {:.4} cycles", u_str, u);
-    println!("{}", x_str.bright_blue().bold());
-    println!("{}", u_str.yellow().bold());
-    println!("std-dev = {:.3}", s);
-    println!("p-value = {:.3}", p);
-    if p < alpha {
-        println!("{}", "Timing leakage detected.".red().bold());
+fn htest(baseline: Vec<u64>, test: Vec<u64>, alpha: f64, n_fold: usize) -> (Vec<f64>, Vec<f64>) {
+    let htest = rustats::hypothesis_testings::MannWhitneyU::new(baseline.iter(), test.iter());
+    println!("p-value = {:.3}", htest.p_value().unwrap());
+    if htest.test(alpha) {
+        println!("{}", "Possible timing leakage.".red().bold());
     } else {
         println!("{}", "Timing leakage NOT detected.".green().bold());
     }
+    let baseline = baseline
+        .into_iter()
+        .map(|v| v as f64 / n_fold as f64)
+        .collect();
+    let test = test.into_iter().map(|v| v as f64 / n_fold as f64).collect();
     (baseline, test)
-}
-
-// remove anything beyond 5 std_dev from mean
-fn denoise(v: Vec<f64>) -> Vec<f64> {
-    let x = v.as_slice().mean();
-    let s = v.as_slice().std_dev();
-    let k = 1.;
-    v.into_iter()
-        .filter(|&a| a < x + s * k && a > x - s * k)
-        .collect()
 }

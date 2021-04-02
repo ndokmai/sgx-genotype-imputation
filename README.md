@@ -18,12 +18,12 @@
 - [Clang 3.8.0](https://releases.llvm.org/download.html) (for remote attestation)
     - To automatically set up clang 3.8.0 locally, run `./setup_clang.sh`
 
-## Z-tests for timing leakage
-To test whether arithmetic primitives leak timing discrepancies, run from within [smac/](smac/),
+## Two-sided rank-sum tests for timing leakage
+To test whether SMac and SMac-lite's subroutines leak timing discrepancies, run 
 ```bash
-cargo +nightly run --bin timing_leak --release
+./test_leakage.sh
 ```
-SMac-lite relies on `nested-if-else`, `f32`, and `f64`, while SMac relies on `fixed-select` and `fixed-time-ln` for computation involving sensitive data. It is normal for `nested-if-else`, `f32`, and `f64` to exhibit some leakage, while `fixed-select` and `fixed-time-ln` should **NOT** leak. 
+SMac-lite relies on `if-else` and `f32`, while SMac relies on `fixed-select` and `fixed-time-ln` for computation involving sensitive data. It is normal to observe leakage in `if-else` and `f32`, while `fixed-select` and `fixed-time-ln` should **NOT** leak. 
 
 ## Configuration & Build
 Edit the following parameters in [config.sh](config.sh) to configure SMac:
