@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Ko Dokmai <natnatee.dokmai@gmail.com>","Hoon Cho <hcho06@gmail.com>"]
 edition = "2018"
 default-run = "test_run"
+resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -27,8 +28,10 @@ serde = { version = "1.0", features = ["derive"] }
 paste = { version = "1.0", optional = true }
 typenum = { version = "1.12", optional = true}
 timing-shield = { git = "https://github.com/ndokmai/rust-timing-shield.git", optional = true }
-colored = "2.0"
 rustats = "0.1"
+
+[target.'cfg(not(target_env = "sgx"))'.dependencies]
+colored = "2.0"
 
 [dev-dependencies]
 pipe = { version = "0.3", features = ["bidirectional"] }
