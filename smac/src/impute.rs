@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use std::convert::TryFrom;
 
 #[cfg(feature = "leak-resistant")]
-pub use timing_shield::{TpEq, TpI8, TpOrd};
+pub use tp_fixedpoint::timing_shield::{TpEq, TpI8, TpOrd};
 
 const BACKGROUND: f32 = 1e-5;
 const ERR: f32 = 0.00999;
