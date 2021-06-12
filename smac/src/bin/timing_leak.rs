@@ -1,4 +1,5 @@
 #![feature(test)]
+#![feature(bench_black_box)]
 use colored::*;
 use smac::ln_fixed::TpLnFixed;
 use std::arch::x86_64::_rdtsc;

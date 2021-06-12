@@ -102,9 +102,9 @@ fn forward_pass(
         }
 
         let prob_all_cache = sprob_all.clone();
-        let mut prob_cache = unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
+        let mut prob_cache = unsafe { Array2::<Real>::uninit((block.nvar, block.nuniq)).assume_init() };
         let mut prob_norecom_cache =
-            unsafe { Array2::<Real>::uninitialized((block.nvar, block.nuniq)) };
+            unsafe { Array2::<Real>::uninit((block.nvar, block.nuniq)).assume_init() };
 
         let mut sprob = fold_probabilities(sprob_all.view(), block);
         let sprob_first = sprob.clone();
@@ -324,7 +324,7 @@ fn first_emission(tsym: TargetSymbol, block: &Block, mut sprob_all: ArrayViewMut
     if tsym != Symbol::Missing {
         Zip::from(&mut sprob_all)
             .and(&block.indmap)
-            .apply(|prob, &i| {
+            .for_each(|prob, &i| {
                 let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
                 *prob *= emi
             });
@@ -335,7 +335,7 @@ fn first_emission(tsym: TargetSymbol, block: &Block, mut sprob_all: ArrayViewMut
         let cond = tsym.tp_not_eq(&-1);
         Zip::from(&mut sprob_all)
             .and(&block.indmap)
-            .apply(|prob, &i| {
+            .for_each(|prob, &i| {
                 let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
                 *prob = cond.select(emi, *prob);
             });
@@ -425,7 +425,7 @@ fn unfold_probabilities(
 
     Zip::from(&mut sprob_all)
         .and(&block.indmap)
-        .apply(|prob, &ui| {
+        .for_each(|prob, &ui| {
             let ui = ui as usize;
             *prob = precomp1[ui] + *prob * precomp2[ui];
         });
@@ -443,7 +443,7 @@ fn precompute_joint(
     #[cfg(not(feature = "leak-resistant"))]
     {
         let mut jprob = Array1::<Real>::zeros(block.nuniq);
-        Zip::from(&block.indmap).and(&precomp).apply(|&ind, p| {
+        Zip::from(&block.indmap).and(&precomp).for_each(|&ind, p| {
             jprob[ind as usize] += p;
         });
         jprob
@@ -452,7 +452,7 @@ fn precompute_joint(
     #[cfg(feature = "leak-resistant")]
     {
         let mut jprob = vec![Vec::with_capacity(20); block.nuniq];
-        for (&ind, &p) in block.indmap.iter().zip(precomp.into_iter()) {
+        for (&ind, p) in block.indmap.iter().zip(precomp.into_iter()) {
             jprob[ind as usize].push(p);
         }
         Array1::from(

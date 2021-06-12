@@ -100,7 +100,7 @@ impl Block {
             indmap: Array1::from(indmap),
             nvar,
             nuniq,
-            clustsize: Array1::from(clustsize.into_iter().map(|&v| v.into()).collect::<Vec<_>>()),
+            clustsize: Array1::from(clustsize.into_iter().map(|v| v.into()).collect::<Vec<_>>()),
             rhap,
             //eprob: Array1::from(eprob),
             rprob: Array1::from(rprob),

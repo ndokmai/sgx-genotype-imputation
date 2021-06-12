@@ -116,7 +116,7 @@ macro_rules! impl_arith {
                         fn $op_name(self, rhs: &ArrayBase<S, D>) -> Self::Output {
                             let mut out = rhs.to_owned();
                             Zip::from(&mut out)
-                                .apply(|o| o.0 = o.0.$op(self.0) );
+                                .for_each(|o| o.0 = o.0.$op(self.0) );
                             out
                         }
                     }

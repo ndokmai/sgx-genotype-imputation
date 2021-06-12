@@ -1,7 +1,7 @@
 # SMac: Secure Genotype Imputation in Intel SGX
 ## Installation Requirements
 - Ubuntu 16.04/18.04
-- [Rust Nightly](https://www.rust-lang.org/tools/install) (tested with version 1.51)
+- [Rust Nightly](https://www.rust-lang.org/tools/install) (tested with version 1.54)
     - To install the nightly channel, run
     ```bash
     rustup toolchain install nightly
