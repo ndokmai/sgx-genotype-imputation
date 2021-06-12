@@ -1,17 +1,12 @@
 use super::*;
 use paste::paste;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::marker::PhantomData;
 use std::mem::transmute;
 use timing_shield::{TpBool, TpCondSwap, TpEq, TpI32, TpOrd};
-use typenum::marker_traits::Unsigned;
 
 macro_rules! new_self {
     ($inner: expr) => {
-        Self {
-            inner: $inner,
-            _phantom: PhantomData,
-        }
+        Self { inner: $inner }
     };
 }
 
@@ -25,25 +20,24 @@ macro_rules! new_self_raw {
 
 /// Fixed in regular (no log) space. For internal use only.
 #[derive(Clone, Copy)]
-pub struct TpFixedInner32<F: Unsigned> {
+pub struct TpFixedInner32<const F: usize> {
     inner: TpI32,
-    _phantom: PhantomData<F>,
 }
 
-impl<F: Unsigned> TpFixedInner32<F> {
+impl<const F: usize> TpFixedInner32<F> {
     pub const ZERO: Self = new_self_raw!(0i32);
     pub const NAN: Self = new_self_raw!(i32::MAX);
 
     pub const fn leaky_from_f32(f: f32) -> Self {
-        new_self_raw!((f * (1 << F::USIZE) as f32) as i32)
+        new_self_raw!((f * (1 << F) as f32) as i32)
     }
 
     pub const fn leaky_from_i32(i: i32) -> Self {
-        new_self_raw!(i << F::USIZE)
+        new_self_raw!(i << F)
     }
 
     pub fn leaky_into_f32(self) -> f32 {
-        self.inner.expose() as f32 / (F::USIZE as f32).exp2()
+        self.inner.expose() as f32 / (F as f32).exp2()
     }
 
     pub fn into_inner(self) -> TpI32 {
@@ -82,7 +76,7 @@ impl<F: Unsigned> TpFixedInner32<F> {
     }
 }
 
-impl<F: Unsigned> From<TpFixedInner64<F>> for TpFixedInner32<F> {
+impl<const F: usize> From<TpFixedInner64<F>> for TpFixedInner32<F> {
     fn from(v: TpFixedInner64<F>) -> Self {
         new_self!(v.into_inner().as_i32())
     }
@@ -91,14 +85,14 @@ impl<F: Unsigned> From<TpFixedInner64<F>> for TpFixedInner32<F> {
 macro_rules! impl_arith {
     ($op: ident, $trait: ident) => {
         paste! {
-            impl<F: Unsigned> std::ops::$trait for TpFixedInner32<F> {
+            impl<const F: usize> std::ops::$trait for TpFixedInner32<F> {
                 type Output = Self;
                 #[inline]
                 fn $op(self, rhs: Self) -> Self::Output {
                     new_self!(self.inner.$op(rhs.inner))
                 }
             }
-            impl<F: Unsigned> std::ops::[<$trait Assign>] for TpFixedInner32<F> {
+            impl<const F: usize> std::ops::[<$trait Assign>] for TpFixedInner32<F> {
                 #[inline]
                 fn [<$op _assign>](&mut self, rhs: Self) {
                     self.inner.[<$op _assign>](rhs.inner);
@@ -111,14 +105,14 @@ macro_rules! impl_arith {
 macro_rules! impl_arith_rhs {
     ($op: ident, $trait: ident, $rhs: ident) => {
         paste! {
-            impl<F: Unsigned> std::ops::$trait<$rhs> for TpFixedInner32<F> {
+            impl<const F: usize> std::ops::$trait<$rhs> for TpFixedInner32<F> {
                 type Output = Self;
                 #[inline]
                 fn $op(self, rhs: $rhs) -> Self::Output {
                     new_self!(self.inner.$op(rhs))
                 }
             }
-            impl<F: Unsigned> std::ops::[<$trait Assign>]<$rhs> for TpFixedInner32<F> {
+            impl<const F: usize> std::ops::[<$trait Assign>]<$rhs> for TpFixedInner32<F> {
                 #[inline]
                 fn [<$op _assign>](&mut self, rhs: $rhs) {
                     self.inner.[<$op _assign>](rhs);
@@ -133,7 +127,7 @@ impl_arith! {sub, Sub}
 impl_arith_rhs! {shr, Shr, u32}
 impl_arith_rhs! {shl, Shl, u32}
 
-impl<F: Unsigned> std::ops::Neg for TpFixedInner32<F> {
+impl<const F: usize> std::ops::Neg for TpFixedInner32<F> {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self::Output {
@@ -141,7 +135,7 @@ impl<F: Unsigned> std::ops::Neg for TpFixedInner32<F> {
     }
 }
 
-impl<F: Unsigned> std::ops::BitAnd<TpI32> for TpFixedInner32<F> {
+impl<const F: usize> std::ops::BitAnd<TpI32> for TpFixedInner32<F> {
     type Output = Self;
     #[inline]
     fn bitand(self, rhs: TpI32) -> Self::Output {
@@ -170,12 +164,12 @@ macro_rules! impl_ord_rhs {
 macro_rules! impl_all_ord {
     ($in: ident, $ext: ident) => {
         paste! {
-            impl<F: Unsigned> TpEq<$in> for TpFixedInner32<F> {
+            impl<const F: usize> TpEq<$in> for TpFixedInner32<F> {
                 [<impl_ord $ext>]! {tp_eq, $in}
                 [<impl_ord $ext>]! {tp_not_eq, $in}
             }
 
-            impl<F: Unsigned> TpOrd<$in> for TpFixedInner32<F> {
+            impl<const F: usize> TpOrd<$in> for TpFixedInner32<F> {
                 [<impl_ord $ext>]! {tp_lt, $in}
                 [<impl_ord $ext>]! {tp_lt_eq, $in}
                 [<impl_ord $ext>]! {tp_gt, $in}
@@ -188,14 +182,14 @@ macro_rules! impl_all_ord {
 impl_all_ord! { i32, _rhs }
 impl_all_ord! { Self, _none }
 
-impl<F: Unsigned> TpCondSwap for TpFixedInner32<F> {
+impl<const F: usize> TpCondSwap for TpFixedInner32<F> {
     #[inline]
     fn tp_cond_swap(condition: TpBool, a: &mut Self, b: &mut Self) {
         TpI32::tp_cond_swap(condition, &mut a.inner, &mut b.inner);
     }
 }
 
-impl<F: Unsigned> Serialize for TpFixedInner32<F> {
+impl<const F: usize> Serialize for TpFixedInner32<F> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -204,9 +198,9 @@ impl<F: Unsigned> Serialize for TpFixedInner32<F> {
     }
 }
 
-pub struct TpFixedInner32Visitor<F>(pub PhantomData<F>);
+pub struct TpFixedInner32Visitor<const F: usize>;
 
-impl<'de, F: Unsigned> serde::de::Visitor<'de> for TpFixedInner32Visitor<F> {
+impl<'de, const F: usize> serde::de::Visitor<'de> for TpFixedInner32Visitor<F> {
     type Value = TpFixedInner32<F>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -219,24 +213,23 @@ impl<'de, F: Unsigned> serde::de::Visitor<'de> for TpFixedInner32Visitor<F> {
     {
         Ok(TpFixedInner32::<F> {
             inner: unsafe { transmute(value) },
-            _phantom: PhantomData,
         })
     }
 }
 
-impl<'de, F: Unsigned> Deserialize<'de> for TpFixedInner32<F> {
+impl<'de, const F: usize> Deserialize<'de> for TpFixedInner32<F> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_u32(TpFixedInner32Visitor::<F>(PhantomData))
+        deserializer.deserialize_u32(TpFixedInner32Visitor::<F>)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    type F = TpFixedInner32<typenum::U20>;
+    type F = TpFixedInner32<20>;
 
     #[test]
     fn conversion_test() {

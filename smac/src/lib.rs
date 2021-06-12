@@ -27,7 +27,7 @@ mod inner {
 
 #[cfg(feature = "leak-resistant")]
 mod inner {
-    pub type Real = tp_fixedpoint::TpLnFixed<tp_fixedpoint::typenum::U20>;
+    pub type Real = tp_fixedpoint::TpLnFixed<20>;
     pub type TargetSymbol = tp_fixedpoint::timing_shield::TpI8;
 }
 

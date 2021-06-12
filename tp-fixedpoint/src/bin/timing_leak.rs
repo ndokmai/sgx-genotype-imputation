@@ -1,11 +1,11 @@
 #![feature(test)]
 #![feature(bench_black_box)]
 use colored::*;
-use tp_fixedpoint::TpLnFixed;
 use std::arch::x86_64::_rdtsc;
 use std::hint::black_box;
+use tp_fixedpoint::TpLnFixed;
 
-type F = TpLnFixed<typenum::U20>;
+type F = TpLnFixed<20>;
 
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();

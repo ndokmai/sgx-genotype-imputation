@@ -1,16 +1,11 @@
 use super::*;
 use paste::paste;
-use std::marker::PhantomData;
 use std::mem::transmute;
 use timing_shield::{TpBool, TpCondSwap, TpEq, TpI64, TpOrd, TpU32};
-use typenum::marker_traits::Unsigned;
 
 macro_rules! new_self {
     ($inner: expr) => {
-        Self {
-            inner: $inner,
-            _phantom: PhantomData,
-        }
+        Self { inner: $inner }
     };
 }
 
@@ -96,25 +91,24 @@ macro_rules! impl_approx {
 
 /// Fixed in regular (no log) space. For internal use only.
 #[derive(Clone, Copy)]
-pub struct TpFixedInner64<F: Unsigned> {
+pub struct TpFixedInner64<const F: usize> {
     inner: TpI64,
-    _phantom: PhantomData<F>,
 }
 
-impl<F: Unsigned> TpFixedInner64<F> {
+impl<const F: usize> TpFixedInner64<F> {
     pub const ZERO: Self = new_self_raw!(0i64);
     pub const NAN: Self = new_self_raw!(i64::MAX);
 
     pub const fn leaky_from_f32(f: f32) -> Self {
-        new_self_raw!((f * (1 << F::USIZE) as f32) as i64)
+        new_self_raw!((f * (1 << F) as f32) as i64)
     }
 
     pub const fn leaky_from_i64(i: i64) -> Self {
-        new_self_raw!(i << F::USIZE)
+        new_self_raw!(i << F)
     }
 
     pub fn leaky_into_f32(self) -> f32 {
-        self.inner.expose() as f32 / (F::USIZE as f32).exp2()
+        self.inner.expose() as f32 / (F as f32).exp2()
     }
 
     pub fn into_inner(self) -> TpI64 {
@@ -155,7 +149,7 @@ impl<F: Unsigned> TpFixedInner64<F> {
 
         let mut shift = TpU32::protect(0);
         let mut first_flag = t;
-        for _ in 0..(F::USIZE - 1) {
+        for _ in 0..(F - 1) {
             let bit = z.tp_gt_eq(&onehalf);
             shift += (!bit).as_u32();
             let found = first_flag & bit;
@@ -166,7 +160,7 @@ impl<F: Unsigned> TpFixedInner64<F> {
 
         // if first_flag is still true then input was zero, just set to smallest non-zero case
         z_scaled = first_flag.select(onehalf, z_scaled);
-        shift = first_flag.select(TpU32::protect(F::U32 - 2), shift);
+        shift = first_flag.select(TpU32::protect(F as u32 - 2), shift);
 
         let zs = z_scaled - Self::leaky_from_i64(1);
         let zs2 = zs * zs;
@@ -178,7 +172,7 @@ impl<F: Unsigned> TpFixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> From<TpFixedInner32<F>> for TpFixedInner64<F> {
+impl<const F: usize> From<TpFixedInner32<F>> for TpFixedInner64<F> {
     fn from(v: TpFixedInner32<F>) -> Self {
         new_self!(v.into_inner().as_i64())
     }
@@ -187,14 +181,14 @@ impl<F: Unsigned> From<TpFixedInner32<F>> for TpFixedInner64<F> {
 macro_rules! impl_arith {
     ($op: ident, $trait: ident) => {
         paste! {
-            impl<F: Unsigned> std::ops::$trait for TpFixedInner64<F> {
+            impl<const F: usize> std::ops::$trait for TpFixedInner64<F> {
                 type Output = Self;
                 #[inline]
                 fn $op(self, rhs: Self) -> Self::Output {
                     new_self!(self.inner.$op(rhs.inner))
                 }
             }
-            impl<F: Unsigned> std::ops::[<$trait Assign>] for TpFixedInner64<F> {
+            impl<const F: usize> std::ops::[<$trait Assign>] for TpFixedInner64<F> {
                 #[inline]
                 fn [<$op _assign>](&mut self, rhs: Self) {
                     self.inner.[<$op _assign>](rhs.inner);
@@ -207,14 +201,14 @@ macro_rules! impl_arith {
 macro_rules! impl_arith_rhs {
     ($op: ident, $trait: ident, $rhs: ident) => {
         paste! {
-            impl<F: Unsigned> std::ops::$trait<$rhs> for TpFixedInner64<F> {
+            impl<const F: usize> std::ops::$trait<$rhs> for TpFixedInner64<F> {
                 type Output = Self;
                 #[inline]
                 fn $op(self, rhs: $rhs) -> Self::Output {
                     new_self!(self.inner.$op(rhs))
                 }
             }
-            impl<F: Unsigned> std::ops::[<$trait Assign>]<$rhs> for TpFixedInner64<F> {
+            impl<const F: usize> std::ops::[<$trait Assign>]<$rhs> for TpFixedInner64<F> {
                 #[inline]
                 fn [<$op _assign>](&mut self, rhs: $rhs) {
                     self.inner.[<$op _assign>](rhs);
@@ -229,7 +223,7 @@ impl_arith! {sub, Sub}
 impl_arith_rhs! {shr, Shr, u32}
 impl_arith_rhs! {shl, Shl, u32}
 
-impl<F: Unsigned> std::ops::Neg for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Neg for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self::Output {
@@ -237,22 +231,22 @@ impl<F: Unsigned> std::ops::Neg for TpFixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> std::ops::Mul for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Mul for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
-        new_self!((self.inner * rhs.inner) >> F::U32)
+        new_self!((self.inner * rhs.inner) >> F as u32)
     }
 }
 
-impl<F: Unsigned> std::ops::MulAssign for TpFixedInner64<F> {
+impl<const F: usize> std::ops::MulAssign for TpFixedInner64<F> {
     #[inline]
     fn mul_assign(&mut self, rhs: Self) {
         *self = *self * rhs;
     }
 }
 
-impl<F: Unsigned> std::ops::Mul<i64> for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Mul<i64> for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: i64) -> Self::Output {
@@ -260,7 +254,7 @@ impl<F: Unsigned> std::ops::Mul<i64> for TpFixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> std::ops::Mul<TpI64> for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Mul<TpI64> for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: TpI64) -> Self::Output {
@@ -268,14 +262,14 @@ impl<F: Unsigned> std::ops::Mul<TpI64> for TpFixedInner64<F> {
     }
 }
 
-impl<F: Unsigned> std::ops::MulAssign<TpI64> for TpFixedInner64<F> {
+impl<const F: usize> std::ops::MulAssign<TpI64> for TpFixedInner64<F> {
     #[inline]
     fn mul_assign(&mut self, rhs: TpI64) {
         self.inner *= rhs;
     }
 }
 
-impl<F: Unsigned> std::ops::BitAnd<TpI64> for TpFixedInner64<F> {
+impl<const F: usize> std::ops::BitAnd<TpI64> for TpFixedInner64<F> {
     type Output = Self;
     #[inline]
     fn bitand(self, rhs: TpI64) -> Self::Output {
@@ -304,12 +298,12 @@ macro_rules! impl_ord_rhs {
 macro_rules! impl_all_ord {
     ($in: ident, $ext: ident) => {
         paste! {
-            impl<F: Unsigned> TpEq<$in> for TpFixedInner64<F> {
+            impl<const F: usize> TpEq<$in> for TpFixedInner64<F> {
                 [<impl_ord $ext>]! {tp_eq, $in}
                 [<impl_ord $ext>]! {tp_not_eq, $in}
             }
 
-            impl<F: Unsigned> TpOrd<$in> for TpFixedInner64<F> {
+            impl<const F: usize> TpOrd<$in> for TpFixedInner64<F> {
                 [<impl_ord $ext>]! {tp_lt, $in}
                 [<impl_ord $ext>]! {tp_lt_eq, $in}
                 [<impl_ord $ext>]! {tp_gt, $in}
@@ -322,7 +316,7 @@ macro_rules! impl_all_ord {
 impl_all_ord! { i64, _rhs }
 impl_all_ord! { Self, _none }
 
-impl<F: Unsigned> TpCondSwap for TpFixedInner64<F> {
+impl<const F: usize> TpCondSwap for TpFixedInner64<F> {
     #[inline]
     fn tp_cond_swap(condition: TpBool, a: &mut Self, b: &mut Self) {
         TpI64::tp_cond_swap(condition, &mut a.inner, &mut b.inner);
@@ -388,7 +382,7 @@ mod ome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    type F = TpFixedInner64<typenum::U20>;
+    type F = TpFixedInner64<20>;
 
     #[test]
     fn conversion_test() {
