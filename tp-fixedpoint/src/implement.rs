@@ -12,7 +12,6 @@ impl<const F: usize> TpLnFixed<F> {
     //TODO remove this
     pub const ONE: Self = Self(TpFixedInner32::ZERO);
     pub const NAN: Self = Self(TpFixedInner32::NAN);
-    pub const EPS: Self = Self(TpFixedInner32::leaky_from_f32(-69.0775527898)); // 1e-30
 
     pub fn leaky_from_f32(f: f32) -> Self {
         Self(TpFixedInner32::leaky_from_f32(f.ln()))
@@ -20,7 +19,7 @@ impl<const F: usize> TpLnFixed<F> {
 
     pub fn sum_in_place(slice: &mut [Self]) -> Self {
         if slice.is_empty() {
-            return Self::EPS;
+            panic!("Cannot sum an empty slice");
         } else if slice.len() == 1 {
             return slice[0];
         } else if slice.len() <= 8 {
@@ -32,6 +31,26 @@ impl<const F: usize> TpLnFixed<F> {
             slice[i] += slice[i + first_half_len];
         }
         return Self::sum_in_place(&mut slice[..first_half_len]);
+    }
+
+    pub fn checked_sum_in_place(slice: &mut [Self]) -> Self {
+        if slice.is_empty() {
+            panic!("Cannot sum an empty slice");
+        } else if slice.len() == 1 {
+            return slice[0];
+        } else if slice.len() <= 8 {
+            return slice[1..]
+                .iter()
+                .fold(slice[0], |acc, &a| a.is_nan().select(acc, acc + a));
+        }
+        let first_half_len = (slice.len() + 1) / 2;
+        let second_half_len = slice.len() / 2;
+        for i in 0..second_half_len {
+            slice[i] = slice[i + first_half_len]
+                .is_nan()
+                .select(slice[i], slice[i] + slice[i + first_half_len]);
+        }
+        return Self::checked_sum_in_place(&mut slice[..first_half_len]);
     }
 
     pub fn leaky_from_i32(i: i32) -> Self {
@@ -47,6 +66,9 @@ impl<const F: usize> TpLnFixed<F> {
 
     pub fn leaky_is_nan(self) -> bool {
         self.0.tp_eq(&Self::NAN.0).expose()
+    }
+    pub fn is_nan(self) -> TpBool {
+        self.0.tp_eq(&Self::NAN.0)
     }
 
     pub fn select_from_4_f32(
@@ -169,16 +191,6 @@ impl<const F: usize> std::fmt::Display for TpLnFixed<F> {
     }
 }
 
-impl<const F: usize> num_traits::identities::Zero for TpLnFixed<F> {
-    fn zero() -> Self {
-        panic!("This should never be called!");
-    }
-
-    fn is_zero(&self) -> bool {
-        false
-    }
-}
-
 impl<const F: usize> num_traits::identities::One for TpLnFixed<F> {
     fn one() -> Self {
         Self::ONE
@@ -197,7 +209,7 @@ impl<const F: usize> std::iter::Sum<TpLnFixed<F>> for TpLnFixed<F> {
                 Some(second) => first + second,
                 None => return first,
             },
-            None => return TpLnFixed::EPS,
+            None => panic!("Cannot sum an empty iterator"),
         };
         let mut accu = Vec::with_capacity(20);
         accu.push(first_pair);

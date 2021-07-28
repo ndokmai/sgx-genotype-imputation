@@ -11,4 +11,4 @@ use fixed_inner_32::*;
 use fixed_inner_64::*;
 pub use implement::TpLnFixed;
 pub use timing_shield;
-//pub use typenum;
+pub use num_traits;
