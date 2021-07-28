@@ -46,9 +46,13 @@ impl<const F: usize> TpLnFixed<F> {
         let first_half_len = (slice.len() + 1) / 2;
         let second_half_len = slice.len() / 2;
         for i in 0..second_half_len {
-            slice[i] = slice[i + first_half_len]
-                .is_nan()
-                .select(slice[i], slice[i] + slice[i + first_half_len]);
+            slice[i] = slice[i + first_half_len].is_nan().select(
+                slice[i],
+                slice[i].is_nan().select(
+                    slice[i + first_half_len],
+                    slice[i] + slice[i + first_half_len],
+                ),
+            );
         }
         return Self::checked_sum_in_place(&mut slice[..first_half_len]);
     }
