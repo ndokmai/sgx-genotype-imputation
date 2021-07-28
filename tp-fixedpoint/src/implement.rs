@@ -39,9 +39,9 @@ impl<const F: usize> TpLnFixed<F> {
         } else if slice.len() == 1 {
             return slice[0];
         } else if slice.len() <= 8 {
-            return slice[1..]
-                .iter()
-                .fold(slice[0], |acc, &a| a.is_nan().select(acc, acc + a));
+            return slice[1..].iter().fold(slice[0], |acc, &a| {
+                acc.is_nan().select(a, a.is_nan().select(acc, acc + a))
+            });
         }
         let first_half_len = (slice.len() + 1) / 2;
         let second_half_len = slice.len() / 2;
