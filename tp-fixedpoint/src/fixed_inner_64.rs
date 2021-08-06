@@ -3,6 +3,8 @@ use paste::paste;
 use std::mem::transmute;
 use timing_shield::{TpBool, TpCondSwap, TpEq, TpI64, TpOrd, TpU32};
 
+use ndarray::{Array1, Zip};
+
 macro_rules! new_self {
     ($inner: expr) => {
         Self { inner: $inner }
@@ -123,10 +125,10 @@ impl<const F: usize> TpFixedInner64<F> {
         max_val + Self::nls(diff)
     }
 
-    /// lme(a, b) = ln(exp(a) - exp(b))
-    pub fn lme(self, other: Self) -> Self {
+    /// lde(a, b) = ln(exp(a) - exp(b))
+    pub fn lde(self, other: Self) -> Self {
         let z = self - other;
-        self + z.ome().log_lt_one()
+        self + z.ode().log_lt_one()
     }
 
     // Piecewise linear approximation to f(a) = ln(1 + exp(-a))
@@ -137,10 +139,10 @@ impl<const F: usize> TpFixedInner64<F> {
     // Piecewise polynomial approximation to f(a) = 1 - exp(-a)
     // Restricted to the positive domain (a >= 0)
     // Approximation level can be adjusted
-    impl_approx! {OME, ome}
+    impl_approx! {ODE, ode}
 
     /// Approximate log function for domain 0 < a <= 1
-    fn log_lt_one(self) -> Self {
+    pub fn log_lt_one(self) -> Self {
         let t = TpBool::protect(true);
         let f = TpBool::protect(false);
         let onehalf = Self::leaky_from_i64(1) >> 1;
@@ -149,6 +151,7 @@ impl<const F: usize> TpFixedInner64<F> {
 
         let mut shift = TpU32::protect(0);
         let mut first_flag = t;
+
         for _ in 0..(F - 1) {
             let bit = z.tp_gt_eq(&onehalf);
             shift += (!bit).as_u32();
@@ -169,6 +172,50 @@ impl<const F: usize> TpFixedInner64<F> {
         let taylor_approx = zs - (zs2 >> 1) + zs3 * Self::leaky_from_f32(1. / 3.);
         let ln2 = Self::leaky_from_f32(0.69314718055994528623);
         taylor_approx - ln2 * shift.as_i64()
+    }
+
+    pub fn log_lt_one_batch(v: Array1<Self>) -> Array1<Self> {
+        let onehalf = Self::leaky_from_i64(1) >> 1;
+        let mut z = v;
+        let mut z_scaled = Array1::from_elem(z.dim(), Self::ZERO);
+        let mut shift = Array1::from_elem(z.dim(), TpU32::protect(0));
+        let mut first_flag = Array1::from_elem(z.dim(), TpBool::protect(true));
+        for _ in 0..(F - 1) {
+            let bit = Array1::from_iter(z.iter().map(|v| v.tp_gt_eq(&onehalf)));
+            Zip::from(&mut shift)
+                .and(&bit)
+                .for_each(|a, b| *a += (!*b).as_u32());
+            let found = &first_flag & bit;
+            Zip::from(&mut z_scaled)
+                .and(&z)
+                .and(&found)
+                .for_each(|a, b, c| {
+                    *a = c.select(*b, *a);
+                });
+            Zip::from(&mut first_flag)
+                .and(&found)
+                .for_each(|a, b| *a = b.select(TpBool::protect(false), *a));
+
+            Zip::from(&mut z).for_each(|a| *a <<= 1);
+        }
+
+        // if first_flag is still true then input was zero, just set to smallest non-zero case
+        Zip::from(&mut z_scaled)
+            .and(&first_flag)
+            .for_each(|a, b| *a = b.select(onehalf, *a));
+        Zip::from(&mut shift)
+            .and(&first_flag)
+            .for_each(|a, b| *a = b.select(TpU32::protect(F as u32 - 2), *a));
+
+        let zs = z_scaled - Self::leaky_from_i64(1);
+        let zs2 = &zs * &zs;
+        let zs3 = &zs * &zs2;
+        let mut taylor_approx = zs - (zs2 >> 1) + zs3 * Self::leaky_from_f32(1. / 3.);
+        let ln2 = Self::leaky_from_f32(0.69314718055994528623);
+        Zip::from(&mut taylor_approx)
+            .and(&shift)
+            .for_each(|a, b| *a -= ln2 * b.as_i64());
+        taylor_approx
     }
 }
 
@@ -316,6 +363,8 @@ macro_rules! impl_all_ord {
 impl_all_ord! { i64, _rhs }
 impl_all_ord! { Self, _none }
 
+impl<const F: usize> ndarray::ScalarOperand for TpFixedInner64<F> {}
+
 impl<const F: usize> TpCondSwap for TpFixedInner64<F> {
     #[inline]
     fn tp_cond_swap(condition: TpBool, a: &mut Self, b: &mut Self) {
@@ -351,8 +400,8 @@ mod nls {
     ];
 }
 
-// OME approximation parameters
-mod ome {
+// ODE approximation parameters
+mod ode {
     pub const N_SPLIT: usize = 4;
     pub const N_SEG: usize = 1 << N_SPLIT;
     pub const MAX_INPUT: i64 = 10;
@@ -412,12 +461,12 @@ mod tests {
     }
 
     #[test]
-    fn lme_test() {
+    fn lde_test() {
         let a = 11f32;
         let b = 9f32;
         let reference = (a.exp() - b.exp()).ln();
         let res = F::leaky_from_f32(a)
-            .lme(F::leaky_from_f32(b))
+            .lde(F::leaky_from_f32(b))
             .leaky_into_f32();
         assert!((reference - res).abs() < 1e-3);
     }
@@ -428,12 +477,17 @@ mod tests {
         let res = F::leaky_from_f32(a).log_lt_one().leaky_into_f32();
         let reference = a.ln();
         assert!((reference - res).abs() < 1e-7);
+
+        let res = Array1::from_elem(100, F::leaky_from_f32(a));
+        let res = F::log_lt_one_batch(res);
+        res.iter()
+            .for_each(|res| assert!((reference - res.leaky_into_f32()).abs() < 1e-7));
     }
 
     #[test]
-    fn ome_test() {
+    fn ode_test() {
         let a = 0.1234f32;
-        let res = F::leaky_from_f32(a).ome().leaky_into_f32();
+        let res = F::leaky_from_f32(a).ode().leaky_into_f32();
         let reference = 1. - 1. / a.exp();
         assert!((reference - res).abs() < 1e-3);
     }

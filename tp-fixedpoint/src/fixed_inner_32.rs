@@ -68,11 +68,11 @@ impl<const F: usize> TpFixedInner32<F> {
         a.lse(b).into()
     }
 
-    /// lme(a, b) = ln(exp(a) - exp(b))
-    pub fn lme(self, other: Self) -> Self {
+    /// lde(a, b) = ln(exp(a) - exp(b))
+    pub fn lde(self, other: Self) -> Self {
         let a: TpFixedInner64<F> = self.into();
         let b: TpFixedInner64<F> = other.into();
-        a.lme(b).into()
+        a.lde(b).into()
     }
 }
 
@@ -251,12 +251,12 @@ mod tests {
     }
 
     #[test]
-    fn lme_test() {
+    fn lde_test() {
         let a = 11f32;
         let b = 9f32;
         let reference = (a.exp() - b.exp()).ln();
         let res = F::leaky_from_f32(a)
-            .lme(F::leaky_from_f32(b))
+            .lde(F::leaky_from_f32(b))
             .leaky_into_f32();
         assert!((reference - res).abs() < 1e-3);
     }
