@@ -33,7 +33,7 @@ macro_rules! impl_approx {
                     let mut j = 0;
                     loop {
                         let out_row = &mut out[j];
-                        out_row[i] = Self::leaky_from_f32(COEFFS[i][j]);
+                        out_row[i] = Self::protect_f32(COEFFS[i][j]);
                         j += 1;
                         if j == POLY_DEG + 1 {
                             break;
@@ -52,7 +52,7 @@ macro_rules! impl_approx {
                 let f = TpBool::protect(false);
                 let t = TpBool::protect(true);
                 let mut x = self;
-                let mut step = Self::leaky_from_i64(MAX_INPUT >> 1);
+                let mut step = Self::protect_i64(MAX_INPUT >> 1);
                 let mut pos_flags = [f; N_SPLIT];
                 let mut flag = t;
                 for i in 0..N_SPLIT {
@@ -93,27 +93,27 @@ macro_rules! impl_approx {
 
 /// Fixed in regular (no log) space. For internal use only.
 #[derive(Clone, Copy)]
-pub struct TpFixedInner64<const F: usize> {
+pub struct TpFixed64<const F: usize> {
     inner: TpI64,
 }
 
-impl<const F: usize> TpFixedInner64<F> {
+impl<const F: usize> TpFixed64<F> {
     pub const ZERO: Self = new_self_raw!(0i64);
     pub const NAN: Self = new_self_raw!(i64::MAX);
 
-    pub const fn leaky_from_f32(f: f32) -> Self {
+    pub const fn protect_f32(f: f32) -> Self {
         new_self_raw!((f * (1 << F) as f32) as i64)
     }
 
-    pub const fn leaky_from_i64(i: i64) -> Self {
+    pub const fn protect_i64(i: i64) -> Self {
         new_self_raw!(i << F)
     }
 
-    pub fn leaky_into_f32(self) -> f32 {
+    pub fn expose_into_f32(self) -> f32 {
         self.inner.expose() as f32 / (F as f32).exp2()
     }
 
-    pub fn into_inner(self) -> TpI64 {
+    pub(crate) fn into_inner(self) -> TpI64 {
         self.inner
     }
 
@@ -145,7 +145,7 @@ impl<const F: usize> TpFixedInner64<F> {
     pub fn log_lt_one(self) -> Self {
         let t = TpBool::protect(true);
         let f = TpBool::protect(false);
-        let onehalf = Self::leaky_from_i64(1) >> 1;
+        let onehalf = Self::protect_i64(1) >> 1;
         let mut z = self;
         let mut z_scaled = Self::ZERO;
 
@@ -165,17 +165,17 @@ impl<const F: usize> TpFixedInner64<F> {
         z_scaled = first_flag.select(onehalf, z_scaled);
         shift = first_flag.select(TpU32::protect(F as u32 - 2), shift);
 
-        let zs = z_scaled - Self::leaky_from_i64(1);
+        let zs = z_scaled - Self::protect_i64(1);
         let zs2 = zs * zs;
         let zs3 = zs * zs2;
 
-        let taylor_approx = zs - (zs2 >> 1) + zs3 * Self::leaky_from_f32(1. / 3.);
-        let ln2 = Self::leaky_from_f32(0.69314718055994528623);
+        let taylor_approx = zs - (zs2 >> 1) + zs3 * Self::protect_f32(1. / 3.);
+        let ln2 = Self::protect_f32(0.69314718055994528623);
         taylor_approx - ln2 * shift.as_i64()
     }
 
     pub fn log_lt_one_batch(v: Array1<Self>) -> Array1<Self> {
-        let onehalf = Self::leaky_from_i64(1) >> 1;
+        let onehalf = Self::protect_i64(1) >> 1;
         let mut z = v;
         let mut z_scaled = Array1::from_elem(z.dim(), Self::ZERO);
         let mut shift = Array1::from_elem(z.dim(), TpU32::protect(0));
@@ -207,11 +207,11 @@ impl<const F: usize> TpFixedInner64<F> {
             .and(&first_flag)
             .for_each(|a, b| *a = b.select(TpU32::protect(F as u32 - 2), *a));
 
-        let zs = z_scaled - Self::leaky_from_i64(1);
+        let zs = z_scaled - Self::protect_i64(1);
         let zs2 = &zs * &zs;
         let zs3 = &zs * &zs2;
-        let mut taylor_approx = zs - (zs2 >> 1) + zs3 * Self::leaky_from_f32(1. / 3.);
-        let ln2 = Self::leaky_from_f32(0.69314718055994528623);
+        let mut taylor_approx = zs - (zs2 >> 1) + zs3 * Self::protect_f32(1. / 3.);
+        let ln2 = Self::protect_f32(0.69314718055994528623);
         Zip::from(&mut taylor_approx)
             .and(&shift)
             .for_each(|a, b| *a -= ln2 * b.as_i64());
@@ -219,8 +219,8 @@ impl<const F: usize> TpFixedInner64<F> {
     }
 }
 
-impl<const F: usize> From<TpFixedInner32<F>> for TpFixedInner64<F> {
-    fn from(v: TpFixedInner32<F>) -> Self {
+impl<const F: usize> From<TpFixed32<F>> for TpFixed64<F> {
+    fn from(v: TpFixed32<F>) -> Self {
         new_self!(v.into_inner().as_i64())
     }
 }
@@ -228,14 +228,14 @@ impl<const F: usize> From<TpFixedInner32<F>> for TpFixedInner64<F> {
 macro_rules! impl_arith {
     ($op: ident, $trait: ident) => {
         paste! {
-            impl<const F: usize> std::ops::$trait for TpFixedInner64<F> {
+            impl<const F: usize> std::ops::$trait for TpFixed64<F> {
                 type Output = Self;
                 #[inline]
                 fn $op(self, rhs: Self) -> Self::Output {
                     new_self!(self.inner.$op(rhs.inner))
                 }
             }
-            impl<const F: usize> std::ops::[<$trait Assign>] for TpFixedInner64<F> {
+            impl<const F: usize> std::ops::[<$trait Assign>] for TpFixed64<F> {
                 #[inline]
                 fn [<$op _assign>](&mut self, rhs: Self) {
                     self.inner.[<$op _assign>](rhs.inner);
@@ -248,14 +248,14 @@ macro_rules! impl_arith {
 macro_rules! impl_arith_rhs {
     ($op: ident, $trait: ident, $rhs: ident) => {
         paste! {
-            impl<const F: usize> std::ops::$trait<$rhs> for TpFixedInner64<F> {
+            impl<const F: usize> std::ops::$trait<$rhs> for TpFixed64<F> {
                 type Output = Self;
                 #[inline]
                 fn $op(self, rhs: $rhs) -> Self::Output {
                     new_self!(self.inner.$op(rhs))
                 }
             }
-            impl<const F: usize> std::ops::[<$trait Assign>]<$rhs> for TpFixedInner64<F> {
+            impl<const F: usize> std::ops::[<$trait Assign>]<$rhs> for TpFixed64<F> {
                 #[inline]
                 fn [<$op _assign>](&mut self, rhs: $rhs) {
                     self.inner.[<$op _assign>](rhs);
@@ -270,7 +270,7 @@ impl_arith! {sub, Sub}
 impl_arith_rhs! {shr, Shr, u32}
 impl_arith_rhs! {shl, Shl, u32}
 
-impl<const F: usize> std::ops::Neg for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Neg for TpFixed64<F> {
     type Output = Self;
     #[inline]
     fn neg(self) -> Self::Output {
@@ -278,22 +278,25 @@ impl<const F: usize> std::ops::Neg for TpFixedInner64<F> {
     }
 }
 
-impl<const F: usize> std::ops::Mul for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Mul for TpFixed64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
-        new_self!((self.inner * rhs.inner) >> F as u32)
+        new_self!(
+            ((Into::<TpI128>::into(self.inner) * Into::<TpI128>::into(rhs.inner)) >> F as u32)
+                .into()
+        )
     }
 }
 
-impl<const F: usize> std::ops::MulAssign for TpFixedInner64<F> {
+impl<const F: usize> std::ops::MulAssign for TpFixed64<F> {
     #[inline]
     fn mul_assign(&mut self, rhs: Self) {
         *self = *self * rhs;
     }
 }
 
-impl<const F: usize> std::ops::Mul<i64> for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Mul<i64> for TpFixed64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: i64) -> Self::Output {
@@ -301,7 +304,7 @@ impl<const F: usize> std::ops::Mul<i64> for TpFixedInner64<F> {
     }
 }
 
-impl<const F: usize> std::ops::Mul<TpI64> for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Mul<TpI64> for TpFixed64<F> {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: TpI64) -> Self::Output {
@@ -309,14 +312,54 @@ impl<const F: usize> std::ops::Mul<TpI64> for TpFixedInner64<F> {
     }
 }
 
-impl<const F: usize> std::ops::MulAssign<TpI64> for TpFixedInner64<F> {
+impl<const F: usize> std::ops::MulAssign<TpI64> for TpFixed64<F> {
     #[inline]
     fn mul_assign(&mut self, rhs: TpI64) {
         self.inner *= rhs;
     }
 }
 
-impl<const F: usize> std::ops::BitAnd<TpI64> for TpFixedInner64<F> {
+impl<const F: usize> std::ops::Div for TpFixed64<F> {
+    type Output = Self;
+    #[inline]
+    fn div(self, rhs: Self) -> Self::Output {
+        //if rhs.inner.expose() == 0 {
+        //return new_self_raw!(i64::MAX);
+        //}
+        //new_self_raw!((((self.inner.expose() as i128) << F as u32) / rhs.inner.expose() as i128) as i64)
+
+        use timing_shield::TpU64;
+        let self_is_neg = self.tp_lt(&Self::ZERO);
+        let rhs_is_neg = rhs.tp_lt(&Self::ZERO);
+        let result_sign_is_pos = self_is_neg.tp_eq(&rhs_is_neg);
+        let n =
+            Into::<TpU128>::into(self_is_neg.select(-self.inner, self.inner).as_u64()) << F as u32;
+        let mut q = TpU128::protect(0);
+        let mut r = TpU128::protect(0);
+        let d: TpU128 = rhs_is_neg.select(-rhs.inner, rhs.inner).as_u64().into();
+        for i in (0..(64 + F as u32)).rev() {
+            r <<= 1;
+            r |= (n >> i) & TpU128::protect(1);
+            let cond = r.tp_gt_eq(&d);
+            r = cond.select(r - d, r);
+            q = cond.select(q | TpU128::protect(1 << i), q);
+        }
+        let q = result_sign_is_pos.select(
+            Into::<TpU64>::into(q).as_i64(),
+            -Into::<TpU64>::into(q).as_i64(),
+        );
+        new_self!(q)
+    }
+}
+
+impl<const F: usize> std::ops::DivAssign for TpFixed64<F> {
+    #[inline]
+    fn div_assign(&mut self, rhs: Self) {
+        *self = *self / rhs;
+    }
+}
+
+impl<const F: usize> std::ops::BitAnd<TpI64> for TpFixed64<F> {
     type Output = Self;
     #[inline]
     fn bitand(self, rhs: TpI64) -> Self::Output {
@@ -345,12 +388,12 @@ macro_rules! impl_ord_rhs {
 macro_rules! impl_all_ord {
     ($in: ident, $ext: ident) => {
         paste! {
-            impl<const F: usize> TpEq<$in> for TpFixedInner64<F> {
+            impl<const F: usize> TpEq<$in> for TpFixed64<F> {
                 [<impl_ord $ext>]! {tp_eq, $in}
                 [<impl_ord $ext>]! {tp_not_eq, $in}
             }
 
-            impl<const F: usize> TpOrd<$in> for TpFixedInner64<F> {
+            impl<const F: usize> TpOrd<$in> for TpFixed64<F> {
                 [<impl_ord $ext>]! {tp_lt, $in}
                 [<impl_ord $ext>]! {tp_lt_eq, $in}
                 [<impl_ord $ext>]! {tp_gt, $in}
@@ -363,9 +406,27 @@ macro_rules! impl_all_ord {
 impl_all_ord! { i64, _rhs }
 impl_all_ord! { Self, _none }
 
-impl<const F: usize> ndarray::ScalarOperand for TpFixedInner64<F> {}
+impl<const F: usize> ndarray::ScalarOperand for TpFixed64<F> {}
 
-impl<const F: usize> TpCondSwap for TpFixedInner64<F> {
+impl<const F: usize> std::iter::Sum<TpFixed64<F>> for TpFixed64<F> {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = TpFixed64<F>>,
+    {
+        iter.fold(Self::ZERO, |acc, v| acc + v)
+    }
+}
+
+impl<'a, const F: usize> std::iter::Sum<&'a TpFixed64<F>> for TpFixed64<F> {
+    fn sum<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = &'a TpFixed64<F>>,
+    {
+        iter.cloned().sum()
+    }
+}
+
+impl<const F: usize> TpCondSwap for TpFixed64<F> {
     #[inline]
     fn tp_cond_swap(condition: TpBool, a: &mut Self, b: &mut Self) {
         TpI64::tp_cond_swap(condition, &mut a.inner, &mut b.inner);
@@ -431,20 +492,63 @@ mod ode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    type F = TpFixedInner64<20>;
+    type F = TpFixed64<20>;
 
     #[test]
     fn conversion_test() {
         let reference = 123.123456789123456789f32;
-        let a = F::leaky_from_f32(reference);
-        let res = a.leaky_into_f32();
+        let a = F::protect_f32(reference);
+        let res = a.expose_into_f32();
         assert!((reference - res).abs() < 1e-6);
+    }
+
+    #[test]
+    fn div_test() {
+        let ref_a = 1232310.123456789123456789f32;
+        let ref_d = 3.124;
+        let ref_res = ref_a / ref_d;
+        let a = F::protect_f32(ref_a);
+        let d = F::protect_f32(ref_d);
+        let res = (a / d).expose_into_f32();
+        assert!((ref_res - res).abs() < 1.0);
+
+        let ref_a = 1.123456789123456789f32;
+        let ref_d = 3.124;
+        let ref_res = ref_a / ref_d;
+        let a = F::protect_f32(ref_a);
+        let d = F::protect_f32(ref_d);
+        let res = (a / d).expose_into_f32();
+        assert!((ref_res - res).abs() < 1e-5);
+
+        let ref_a = -1.123456789123456789f32;
+        let ref_d = 3.124;
+        let ref_res = ref_a / ref_d;
+        let a = F::protect_f32(ref_a);
+        let d = F::protect_f32(ref_d);
+        let res = (a / d).expose_into_f32();
+        assert!((ref_res - res).abs() < 1e-5);
+
+        let ref_a = 1.123456789123456789f32;
+        let ref_d = -3.124;
+        let ref_res = ref_a / ref_d;
+        let a = F::protect_f32(ref_a);
+        let d = F::protect_f32(ref_d);
+        let res = (a / d).expose_into_f32();
+        assert!((ref_res - res).abs() < 1e-5);
+
+        let ref_a = -1.123456789123456789f32;
+        let ref_d = -3.124;
+        let ref_res = ref_a / ref_d;
+        let a = F::protect_f32(ref_a);
+        let d = F::protect_f32(ref_d);
+        let res = (a / d).expose_into_f32();
+        assert!((ref_res - res).abs() < 1e-5);
     }
 
     #[test]
     fn nls_test() {
         let a = 0.1234f32;
-        let res = F::leaky_from_f32(a).nls().leaky_into_f32();
+        let res = F::protect_f32(a).nls().expose_into_f32();
         let reference = (1. + 1. / a.exp()).ln();
         assert!((reference - res).abs() < 1e-5);
     }
@@ -454,9 +558,7 @@ mod tests {
         let a = 11f32;
         let b = 9f32;
         let reference = (a.exp() + b.exp()).ln();
-        let res = F::leaky_from_f32(a)
-            .lse(F::leaky_from_f32(b))
-            .leaky_into_f32();
+        let res = F::protect_f32(a).lse(F::protect_f32(b)).expose_into_f32();
         assert!((reference - res).abs() < 1e-3);
     }
 
@@ -465,29 +567,27 @@ mod tests {
         let a = 11f32;
         let b = 9f32;
         let reference = (a.exp() - b.exp()).ln();
-        let res = F::leaky_from_f32(a)
-            .lde(F::leaky_from_f32(b))
-            .leaky_into_f32();
+        let res = F::protect_f32(a).lde(F::protect_f32(b)).expose_into_f32();
         assert!((reference - res).abs() < 1e-3);
     }
 
     #[test]
     fn log_lt_one_test() {
         let a = 0.1234f32;
-        let res = F::leaky_from_f32(a).log_lt_one().leaky_into_f32();
+        let res = F::protect_f32(a).log_lt_one().expose_into_f32();
         let reference = a.ln();
         assert!((reference - res).abs() < 1e-7);
 
-        let res = Array1::from_elem(100, F::leaky_from_f32(a));
+        let res = Array1::from_elem(100, F::protect_f32(a));
         let res = F::log_lt_one_batch(res);
         res.iter()
-            .for_each(|res| assert!((reference - res.leaky_into_f32()).abs() < 1e-7));
+            .for_each(|res| assert!((reference - res.expose_into_f32()).abs() < 1e-7));
     }
 
     #[test]
     fn ode_test() {
         let a = 0.1234f32;
-        let res = F::leaky_from_f32(a).ode().leaky_into_f32();
+        let res = F::protect_f32(a).ode().expose_into_f32();
         let reference = 1. - 1. / a.exp();
         assert!((reference - res).abs() < 1e-3);
     }

@@ -3,11 +3,15 @@
 #![feature(const_fn_trait_bound)]
 #![allow(dead_code)]
 
-pub mod fixed_inner_32;
-pub mod fixed_inner_64;
-mod implement;
-use fixed_inner_32::*;
-use fixed_inner_64::*;
-pub use implement::TpLnFixed;
+mod fixed_32;
+mod fixed_64;
+mod ln_fixed;
+mod tp_i128;
+mod tp_u128;
+pub use fixed_32::*;
+pub use fixed_64::*;
+pub use ln_fixed::*;
 pub use num_traits;
 pub use timing_shield;
+use tp_i128::*;
+use tp_u128::*;

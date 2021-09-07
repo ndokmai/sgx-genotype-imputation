@@ -6,15 +6,15 @@ use std::ops::{Add, Sub};
 use timing_shield::{TpBool, TpCondSwap, TpEq, TpOrd};
 
 #[derive(Clone, Copy)]
-pub struct TpLnFixed<const F: usize>(TpFixedInner32<F>);
+pub struct TpLnFixed<const F: usize>(TpFixed32<F>);
 
 impl<const F: usize> TpLnFixed<F> {
     //TODO remove this
-    pub const ONE: Self = Self(TpFixedInner32::ZERO);
-    pub const NAN: Self = Self(TpFixedInner32::NAN);
+    pub const ONE: Self = Self(TpFixed32::ZERO);
+    pub const NAN: Self = Self(TpFixed32::NAN);
 
-    pub fn leaky_from_f32(f: f32) -> Self {
-        Self(TpFixedInner32::leaky_from_f32(f.ln()))
+    pub fn protect_f32(f: f32) -> Self {
+        Self(TpFixed32::protect_f32(f.ln()))
     }
 
     pub fn sum_in_place(slice: &mut [Self]) -> Self {
@@ -57,15 +57,15 @@ impl<const F: usize> TpLnFixed<F> {
         return Self::checked_sum_in_place(&mut slice[..first_half_len]);
     }
 
-    pub fn leaky_from_i32(i: i32) -> Self {
-        Self(TpFixedInner32::leaky_from_f32((i as f32).ln()))
+    pub fn protect_i32(i: i32) -> Self {
+        Self(TpFixed32::protect_f32((i as f32).ln()))
     }
 
-    pub fn leaky_into_f32(self) -> f32 {
+    pub fn expose_into_f32(self) -> f32 {
         if self.leaky_is_nan() {
             return f32::NAN;
         }
-        self.0.leaky_into_f32().exp()
+        self.0.expose_into_f32().exp()
     }
 
     pub fn leaky_is_nan(self) -> bool {
@@ -83,7 +83,7 @@ impl<const F: usize> TpLnFixed<F> {
         a01: f32,
         a00: f32,
     ) -> Self {
-        Self(TpFixedInner32::<F>::select_from_4_f32(
+        Self(TpFixed32::<F>::select_from_4_f32(
             cond0,
             cond1,
             a11.ln(),
@@ -96,19 +96,19 @@ impl<const F: usize> TpLnFixed<F> {
 
 impl<const F: usize> From<u16> for TpLnFixed<F> {
     fn from(u: u16) -> Self {
-        Self::leaky_from_i32(u as i32)
+        Self::protect_i32(u as i32)
     }
 }
 
 impl<const F: usize> From<f32> for TpLnFixed<F> {
     fn from(f: f32) -> Self {
-        Self::leaky_from_f32(f)
+        Self::protect_f32(f)
     }
 }
 
 impl<const F: usize> Into<f32> for TpLnFixed<F> {
     fn into(self) -> f32 {
-        self.leaky_into_f32()
+        self.expose_into_f32()
     }
 }
 
@@ -184,13 +184,13 @@ impl_all_ord! { Self, _none }
 impl<const F: usize> TpCondSwap for TpLnFixed<F> {
     #[inline]
     fn tp_cond_swap(condition: TpBool, a: &mut Self, b: &mut Self) {
-        TpFixedInner32::<F>::tp_cond_swap(condition, &mut a.0, &mut b.0);
+        TpFixed32::<F>::tp_cond_swap(condition, &mut a.0, &mut b.0);
     }
 }
 
 impl<const F: usize> std::fmt::Display for TpLnFixed<F> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let i: f32 = (*self).leaky_into_f32();
+        let i: f32 = (*self).expose_into_f32();
         i.fmt(f)
     }
 }
@@ -215,7 +215,7 @@ impl<const F: usize> std::iter::Sum<TpLnFixed<F>> for TpLnFixed<F> {
             },
             None => panic!("Cannot sum an empty iterator"),
         };
-        let mut accu = Vec::with_capacity(20);
+        let mut accu = Vec::new();
         accu.push(first_pair);
         loop {
             match iter.next() {
@@ -260,16 +260,14 @@ impl<'de, const F: usize> serde::de::Visitor<'de> for TpLnFixedVisitor<F> {
     type Value = TpLnFixed<F>;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("Error serializing TpFixedInner32")
+        formatter.write_str("Error serializing TpFixed32")
     }
 
     fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        TpFixedInner32Visitor::<F>
-            .visit_u32(value)
-            .map(|v| TpLnFixed(v))
+        TpFixed32Visitor::<F>.visit_u32(value).map(|v| TpLnFixed(v))
     }
 }
 
@@ -291,8 +289,8 @@ mod tests {
     #[test]
     fn conversion_test() {
         let reference = 123.123456789123456789f32;
-        let a = F::leaky_from_f32(reference);
-        let res = a.leaky_into_f32();
+        let a = F::protect_f32(reference);
+        let res = a.expose_into_f32();
         assert!((reference - res).abs() < 1e-3);
     }
 
@@ -301,7 +299,7 @@ mod tests {
         let a = 2f32.exp();
         let b = 1f32.exp();
         let reference = a + b;
-        let res = (F::leaky_from_f32(a) + F::leaky_from_f32(b)).leaky_into_f32();
+        let res = (F::protect_f32(a) + F::protect_f32(b)).expose_into_f32();
         assert!((reference - res).abs() < 1e-2);
     }
 
@@ -310,7 +308,7 @@ mod tests {
         let a = 3f32.exp();
         let b = 1f32.exp();
         let reference = a - b;
-        let res = (F::leaky_from_f32(a) - F::leaky_from_f32(b)).leaky_into_f32();
+        let res = (F::protect_f32(a) - F::protect_f32(b)).expose_into_f32();
         assert!((reference - res).abs() < 1e-2);
     }
 
@@ -337,7 +335,7 @@ mod tests {
                 3.,
                 4.,
             )
-            .leaky_into_f32();
+            .expose_into_f32();
             assert!((reference - res).abs() < 1e-5);
         };
     }

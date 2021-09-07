@@ -22,6 +22,9 @@ fn main() {
     let n = 100;
     let n_fold = 1000000;
     let alpha = 0.05;
+    leading_zeros(n*10, n_fold*10, alpha, save);
+    leftshift_tests(n*100, n_fold, alpha, save);
+    rightshift_tests(n*100, n_fold, alpha, save);
     if_else_tests(n, n_fold, alpha, save);
     f32_tests(n, n_fold, alpha, save);
     const_select_tests(n, n_fold, alpha, save);
@@ -42,6 +45,7 @@ fn save_results(baseline: Vec<f64>, test: Vec<f64>, title: &str) {
     test.into_iter()
         .for_each(|v| writeln!(&mut f_test, "{:.5}", v).unwrap());
 }
+
 
 fn if_else_tests(n: usize, n_fold: usize, alpha: f64, save: bool) {
     let title = "if-else";
@@ -271,4 +275,59 @@ fn htest(baseline: Vec<u64>, test: Vec<u64>, alpha: f64, n_fold: usize) -> (Vec<
         .collect();
     let test = test.into_iter().map(|v| v as f64 / n_fold as f64).collect();
     (baseline, test)
+}
+
+fn leading_zeros(n: usize, n_fold: usize, alpha: f64, save: bool) {
+    let title = "leading zeros";
+    let title = format!("===== {} rank-sum test =====", title);
+    println!("{}", title.bold());
+    println!("N = {}; alpha = {}", n, alpha);
+    println!("-------------------");
+    let x_str = format!("leading_zeros(0)");
+    let u_str = format!("leading_zeros(LARGE_NUMBER)");
+    println!("H_0: {} == {}", x_str, u_str);
+    println!("H_1: {} != {}", x_str, u_str);
+    let f = |x: u64| {
+        black_box({
+            let mut z = 0;
+            for _ in 0..n_fold {
+                z = black_box(x.leading_zeros());
+            }
+            z
+        });
+    };
+
+    let f_baseline = || f(black_box(0));
+    let f_test = || f(black_box(0));
+    let (baseline, test) = time_measure_all(n, f_baseline, f_test);
+    let (baseline, test) = htest(baseline, test, alpha, n_fold);
+    if save {
+        save_results(baseline, test, "leading zeros");
+    }
+}
+
+fn leftshift_tests(n: usize, n_fold: usize, alpha: f64, save: bool) {
+    let title = "left-shift";
+    let a = (123456789101112u64, "123456789101112");
+    let b = (1, "1");
+    let c = (50, "50");
+
+    let f = op! {<<, n_fold};
+    let (baseline, test) = op_template(n, n_fold, alpha, a, b, c, f, title, "<<");
+    if save {
+        save_results(baseline, test, "left-shift");
+    }
+}
+
+fn rightshift_tests(n: usize, n_fold: usize, alpha: f64, save: bool) {
+    let title = "right-shift";
+    let a = (123456789101112u64, "123456789101112");
+    let b = (50, "50");
+    let c = (50, "50");
+
+    let f = op! {>>, n_fold};
+    let (baseline, test) = op_template(n, n_fold, alpha, a, b, c, f, title, ">>");
+    if save {
+        save_results(baseline, test, "right-shift");
+    }
 }
