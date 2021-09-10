@@ -2,26 +2,18 @@
 name = "smac"
 version = "0.1.0"
 authors = ["Ko Dokmai <natnatee.dokmai@gmail.com>","Hoon Cho <hcho06@gmail.com>"]
-edition = "2018"
+edition = "2021"
 default-run = "test_run"
-resolver = "2"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
 default = ["leak-resistant"]
 leak-resistant = ["tp-fixedpoint"]
 
 [dependencies]
-ndarray = { version = "0.15" , features = ["serde"] }
+ndarray = "0.15"
 lazy_static = "1.4"
-bitvec = { version = "0.22", features = ["serde"] }
-rand = "0.8"
-bincode = "1.3"
-byteorder = "1.4"
-bufstream = "0.1"
+bitvec = "0.22"
 rayon = "1.5"
-flate2 = "1.0.18"
 serde = { version = "1.0", features = ["derive"] }
 tp-fixedpoint = { path = "../tp-fixedpoint", optional = true }
 m3vcf = { path = "../m3vcf" }
