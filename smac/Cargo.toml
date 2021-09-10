@@ -24,6 +24,7 @@ rayon = "1.5"
 flate2 = "1.0.18"
 serde = { version = "1.0", features = ["derive"] }
 tp-fixedpoint = { path = "../tp-fixedpoint", optional = true }
+m3vcf = { path = "../m3vcf" }
 
 [dev-dependencies]
 pipe = { version = "0.4", features = ["bidirectional"] }

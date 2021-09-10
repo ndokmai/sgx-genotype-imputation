@@ -3,18 +3,16 @@
     feature(sgx_platform)
 )]
 
-pub mod block;
 pub mod client_input;
 pub mod impute;
-pub mod ref_panel;
+pub mod real_block;
 mod symbol;
 pub mod symbol_vec;
 pub mod tcp;
 
-pub use crate::block::*;
 pub use crate::client_input::*;
 pub use crate::impute::*;
-pub use crate::ref_panel::*;
+pub use crate::real_block::*;
 pub use crate::symbol_vec::*;
 pub use crate::tcp::*;
 

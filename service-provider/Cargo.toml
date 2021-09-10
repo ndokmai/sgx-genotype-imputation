@@ -19,6 +19,7 @@ smac = { path = "../smac", optional = true }
 bincode = "1.3"
 rayon = "1.5"
 bufstream = "0.1"
+m3vcf = { path = "../m3vcf" }
 
 [target.'cfg(target_env = "sgx")'.dependencies]
 ra-enclave = { git = "https://github.com/ndokmai/rust-sgx-remote-attestation.git", rev = "4e8277293754b3c26d32ee76844749ef85bf96f9", optional = true }

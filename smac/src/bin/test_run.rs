@@ -49,8 +49,10 @@ fn main() {
     eprintln!("\tSymbols batch directory:\t{}", symbols_batch_dir);
     eprintln!("\tResults directory:\t\t{}", results_dir);
 
-    let (ref_panel_meta, ref_panel_block_iter) = load_ref_panel(Path::new(ref_panel_file));
-    let ref_panel_blocks = ref_panel_block_iter.collect::<Vec<_>>();
+    let (ref_panel_meta, ref_panel_block_iter) = m3vcf::load_ref_panel(Path::new(ref_panel_file));
+    let ref_panel_blocks = ref_panel_block_iter
+        .map(|b| b.into())
+        .collect::<Vec<RealBlock>>();
 
     eprintln!("n_blocks = {}", ref_panel_meta.n_blocks);
     eprintln!("n_haps = {}", ref_panel_meta.n_haps);

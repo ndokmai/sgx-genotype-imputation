@@ -34,7 +34,7 @@ fn main() {
     };
     eprintln!("\tReference panel file:\t{}", ref_panel_file);
 
-    let (ref_panel_meta, ref_panel_block_iter) = load_ref_panel(Path::new(ref_panel_file));
+    let (ref_panel_meta, ref_panel_block_iter) = m3vcf::load_ref_panel(Path::new(ref_panel_file));
     let ref_panel_blocks = ref_panel_block_iter.collect::<Vec<_>>();
 
     assert_eq!(ref_panel_meta.n_blocks, ref_panel_blocks.len());

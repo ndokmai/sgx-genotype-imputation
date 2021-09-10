@@ -1,9 +1,9 @@
-use crate::block::Block;
-use crate::ref_panel::RefPanelMeta;
 use crate::symbol::Symbol;
+use crate::RealBlock;
 use crate::{Real, TargetSymbol};
 use bitvec::slice::BitSlice;
 use lazy_static::lazy_static;
+use m3vcf::RefPanelMeta;
 use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
 use rayon::prelude::*;
 use std::convert::TryFrom;
@@ -34,7 +34,7 @@ struct FwdCacheBlock {
 
 pub fn smac_batch(
     ref_panel_meta: &RefPanelMeta,
-    ref_panel_blocks: &[Block],
+    ref_panel_blocks: &[RealBlock],
     bitmask: &[bool],
     symbols_batch: Vec<Vec<Symbol>>,
 ) -> Vec<Vec<Real>> {
@@ -46,7 +46,7 @@ pub fn smac_batch(
 
 pub fn smac(
     ref_panel_meta: &RefPanelMeta,
-    ref_panel_blocks: &[Block],
+    ref_panel_blocks: &[RealBlock],
     bitmask: &[bool],
     symbols: Vec<Symbol>,
 ) -> Vec<Real> {
@@ -78,7 +78,7 @@ pub fn smac(
 
 fn forward_pass(
     ref_panel_meta: &RefPanelMeta,
-    ref_panel_blocks: &[Block],
+    ref_panel_blocks: &[RealBlock],
     bitmask: &[bool],
     symbols: &[TargetSymbol],
 ) -> Vec<FwdCacheBlock> {
@@ -102,7 +102,8 @@ fn forward_pass(
         }
 
         let prob_all_cache = sprob_all.clone();
-        let mut prob_cache = unsafe { Array2::<Real>::uninit((block.nvar, block.nuniq)).assume_init() };
+        let mut prob_cache =
+            unsafe { Array2::<Real>::uninit((block.nvar, block.nuniq)).assume_init() };
         let mut prob_norecom_cache =
             unsafe { Array2::<Real>::uninit((block.nvar, block.nuniq)).assume_init() };
 
@@ -168,7 +169,7 @@ fn forward_pass(
 
 fn backward_pass(
     ref_panel_meta: &RefPanelMeta,
-    ref_panel_blocks: &[Block],
+    ref_panel_blocks: &[RealBlock],
     bitmask: &[bool],
     symbols: &[TargetSymbol],
     cache_blocks: Vec<FwdCacheBlock>,
@@ -266,7 +267,7 @@ fn backward_pass(
     outputs.into_iter().rev().collect()
 }
 
-fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &Block) -> Array1<Real> {
+fn fold_probabilities(sprob_all: ArrayView1<Real>, block: &RealBlock) -> Array1<Real> {
     #[cfg(not(feature = "leak-resistant"))]
     {
         let mut sprob = Array1::<Real>::zeros(block.nuniq);
@@ -317,7 +318,7 @@ fn single_emission(tsym: TargetSymbol, block_afreq: f32, rhap: Symbol) -> Real {
     )
 }
 
-fn first_emission(tsym: TargetSymbol, block: &Block, mut sprob_all: ArrayViewMut1<Real>) {
+fn first_emission(tsym: TargetSymbol, block: &RealBlock, mut sprob_all: ArrayViewMut1<Real>) {
     let afreq = block.afreq[0];
 
     #[cfg(not(feature = "leak-resistant"))]
@@ -414,7 +415,7 @@ fn transition(
 }
 
 fn unfold_probabilities(
-    block: &Block,
+    block: &RealBlock,
     mut sprob_all: ArrayViewMut1<Real>,
     sprob_first: Array1<Real>,
     sprob_recom: Array1<Real>,
@@ -434,7 +435,7 @@ fn unfold_probabilities(
 // Precompute joint fwd-bwd term for imputation;
 // same as "Constants" variable in minimac
 fn precompute_joint(
-    block: &Block,
+    block: &RealBlock,
     sprob_all: Array1<Real>,
     fwdprob_all: Array1<Real>,
 ) -> Array1<Real> {

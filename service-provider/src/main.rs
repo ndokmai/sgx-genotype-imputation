@@ -53,7 +53,6 @@ fn main() {
         server::ServerTlsPskContext::new(master_key)
     };
 
-
     #[allow(unused_mut)]
     let (mut client_stream, client_socket) = TcpListener::bind(SocketAddr::from((
         IpAddr::from_str("127.0.0.1").unwrap(),
@@ -71,8 +70,12 @@ fn main() {
     let mut client_stream = BufStream::new(client_stream);
 
     eprintln!("SP: receiving reference panel from Host...");
-    let ref_panel_meta: RefPanelMeta = bincode::deserialize_from(&mut host_stream).unwrap();
-    let ref_panel_blocks: Vec<Block> = bincode::deserialize_from(&mut host_stream).unwrap();
+    let ref_panel_meta: m3vcf::RefPanelMeta = bincode::deserialize_from(&mut host_stream).unwrap();
+    let ref_panel_blocks: Vec<m3vcf::Block> = bincode::deserialize_from(&mut host_stream).unwrap();
+    let ref_panel_blocks = ref_panel_blocks
+        .into_iter()
+        .map(|b| b.into())
+        .collect::<Vec<RealBlock>>();
 
     eprintln!("SP: receiving bitmask from Client...");
     let bitmask: Bitmask = bincode::deserialize_from(&mut client_stream).unwrap();
@@ -84,19 +87,17 @@ fn main() {
     let (symbols_send, symbols_recv) = channel();
     let (results_send, results_recv) = channel();
 
-    std::thread::spawn(move || {
-        loop {
-            if let Ok(symbols_batch) = symbols_recv.recv() {
-                let now = std::time::Instant::now();
-                let results = smac_batch(&ref_panel_meta, &ref_panel_blocks, &bitmask, symbols_batch);
-                eprintln!(
-                    "SP: \timputation time = {} ms",
-                    (Instant::now() - now).as_millis()
-                );
-                results_send.send(results).unwrap();
-            } else {
-                break;
-            }
+    std::thread::spawn(move || loop {
+        if let Ok(symbols_batch) = symbols_recv.recv() {
+            let now = std::time::Instant::now();
+            let results = smac_batch(&ref_panel_meta, &ref_panel_blocks, &bitmask, symbols_batch);
+            eprintln!(
+                "SP: \timputation time = {} ms",
+                (Instant::now() - now).as_millis()
+            );
+            results_send.send(results).unwrap();
+        } else {
+            break;
         }
     });
 

@@ -1,4 +1,3 @@
-use crate::Real;
 use bitvec::prelude::{bitvec, BitVec, Lsb0};
 use ndarray::Array1;
 use std::convert::TryFrom;
@@ -9,9 +8,8 @@ pub struct Block {
     pub indmap: Array1<u16>,
     pub nvar: usize,
     pub nuniq: usize,
-    pub clustsize: Array1<Real>,
+    pub clustsize: Array1<u16>,
     pub rhap: Vec<BitVec>,
-    //pub eprob: Array1<f64>,
     pub rprob: Array1<f32>,
     pub afreq: Array1<f32>,
 }
@@ -45,7 +43,6 @@ impl Block {
         let mut clustsize = Array1::<u16>::zeros(nuniq);
         indmap.iter().for_each(|&v| clustsize[v as usize] += 1);
 
-        //let mut eprob = Vec::<f64>::with_capacity(nvar);
         let mut rprob = Vec::<f32>::with_capacity(nvar);
         let mut rhap: Vec<BitVec> = Vec::new();
         let mut afreq = Vec::<f32>::with_capacity(nvar);
@@ -69,7 +66,6 @@ impl Block {
                 }
             }
 
-            //eprob.push(new_eprob.unwrap());
             rprob.push(new_rprob.unwrap());
 
             let data = iter.next().unwrap(); // data for one variant
@@ -100,9 +96,8 @@ impl Block {
             indmap: Array1::from(indmap),
             nvar,
             nuniq,
-            clustsize: Array1::from(clustsize.into_iter().map(|v| v.into()).collect::<Vec<_>>()),
+            clustsize,
             rhap,
-            //eprob: Array1::from(eprob),
             rprob: Array1::from(rprob),
             afreq: Array1::from(afreq),
         })
