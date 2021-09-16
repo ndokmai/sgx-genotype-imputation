@@ -1,7 +1,7 @@
 use crate::symbol::Symbol;
 use crate::RealBlock;
 use crate::{Real, TargetSymbol};
-use bitvec::slice::BitSlice;
+use bitvec::prelude::{BitSlice, Lsb0};
 use lazy_static::lazy_static;
 use m3vcf::RefPanelMeta;
 use ndarray::{Array1, Array2, ArrayView1, ArrayViewMut1, Zip};
@@ -119,6 +119,9 @@ fn forward_pass(
         for i in 1..block.nvar {
             let mask = bitmask_iter.next().unwrap();
             let rec = block.rprob[i - 1];
+            let rhap_row_raw = block.rhap.row(i);
+            let rhap_row =
+                BitSlice::<Lsb0, u8>::from_slice(rhap_row_raw.as_slice().unwrap()).unwrap();
 
             transition(
                 rec,
@@ -136,7 +139,7 @@ fn forward_pass(
                     sprob.view_mut(),
                     sprob_norecom.view_mut(),
                     block.afreq[i],
-                    block.rhap[i].as_bitslice(),
+                    rhap_row,
                 );
             }
 
@@ -204,10 +207,13 @@ fn backward_pass(
 
         // Walk
         for j in (1..block.nvar).rev() {
+            let rhap_row_raw = block.rhap.row(j);
+            let rhap_row =
+                BitSlice::<Lsb0, u8>::from_slice(rhap_row_raw.as_slice().unwrap()).unwrap();
             let output = impute(
                 jprob.clone(),
                 block.clustsize.view(),
-                block.rhap[j].as_bitslice(),
+                rhap_row,
                 fwd_prob.row(j).to_owned(),
                 fwd_prob_first.clone(),
                 fwd_prob_norecom.row(j).to_owned(),
@@ -226,7 +232,7 @@ fn backward_pass(
                     sprob.view_mut(),
                     sprob_norecom.view_mut(),
                     block.afreq[j],
-                    block.rhap[j].as_bitslice(),
+                    rhap_row,
                 );
             }
 
@@ -241,10 +247,13 @@ fn backward_pass(
         }
 
         if b_id == 0 {
+            let rhap_row_raw = block.rhap.row(0);
+            let rhap_row =
+                BitSlice::<Lsb0, u8>::from_slice(rhap_row_raw.as_slice().unwrap()).unwrap();
             let output = impute(
                 jprob,
                 block.clustsize.view(),
-                block.rhap[0].as_bitslice(),
+                rhap_row,
                 fwd_prob.row(0).to_owned(),
                 fwd_prob_first,
                 fwd_prob_norecom.row(0).to_owned(),
@@ -320,13 +329,15 @@ fn single_emission(tsym: TargetSymbol, block_afreq: f32, rhap: Symbol) -> Real {
 
 fn first_emission(tsym: TargetSymbol, block: &RealBlock, mut sprob_all: ArrayViewMut1<Real>) {
     let afreq = block.afreq[0];
+    let rhap_row_raw = block.rhap.row(0);
+    let rhap_row = BitSlice::<Lsb0, u8>::from_slice(rhap_row_raw.as_slice().unwrap()).unwrap();
 
     #[cfg(not(feature = "leak-resistant"))]
     if tsym != Symbol::Missing {
         Zip::from(&mut sprob_all)
             .and(&block.indmap)
             .for_each(|prob, &i| {
-                let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
+                let emi = single_emission(tsym, afreq, rhap_row[i as usize].into());
                 *prob *= emi
             });
     }
@@ -337,7 +348,7 @@ fn first_emission(tsym: TargetSymbol, block: &RealBlock, mut sprob_all: ArrayVie
         Zip::from(&mut sprob_all)
             .and(&block.indmap)
             .for_each(|prob, &i| {
-                let emi = single_emission(tsym, afreq, block.rhap[0][i as usize].into());
+                let emi = single_emission(tsym, afreq, rhap_row[i as usize].into());
                 *prob = cond.select(emi, *prob);
             });
     }
@@ -348,7 +359,7 @@ fn later_emission(
     mut sprob: ArrayViewMut1<Real>,
     mut sprob_norecom: ArrayViewMut1<Real>,
     block_afreq: f32,
-    rhap_row: &BitSlice,
+    rhap_row: &BitSlice<Lsb0, u8>,
 ) {
     #[cfg(not(feature = "leak-resistant"))]
     if tsym != Symbol::Missing {
@@ -469,7 +480,7 @@ fn precompute_joint(
 fn impute(
     jprob: Array1<Real>,
     clustsize: ArrayView1<Real>,
-    rhap_row: &BitSlice,
+    rhap_row: &BitSlice<Lsb0, u8>,
     fwdprob_row: Array1<Real>,
     fwdprob_first: Array1<Real>,
     fwdprob_norecom_row: Array1<Real>,

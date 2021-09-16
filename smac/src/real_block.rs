@@ -1,7 +1,6 @@
 use crate::Real;
-use bitvec::prelude::BitVec;
 use m3vcf::Block;
-use ndarray::Array1;
+use ndarray::{Array1, Array2};
 
 #[derive(Clone)]
 pub struct RealBlock {
@@ -9,7 +8,7 @@ pub struct RealBlock {
     pub nvar: usize,
     pub nuniq: usize,
     pub clustsize: Array1<Real>,
-    pub rhap: Vec<BitVec>,
+    pub rhap: Array2<u8>,
     pub rprob: Array1<f32>,
     pub afreq: Array1<f32>,
 }

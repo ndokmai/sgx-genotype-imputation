@@ -1,5 +1,5 @@
-use bitvec::prelude::{bitvec, BitVec, Lsb0};
-use ndarray::Array1;
+use bitvec::prelude::{BitSlice, Lsb0};
+use ndarray::{Array1, Array2};
 use std::convert::TryFrom;
 use std::io::Result;
 
@@ -9,7 +9,7 @@ pub struct Block {
     pub nvar: usize,
     pub nuniq: usize,
     pub clustsize: Array1<u16>,
-    pub rhap: Vec<BitVec>,
+    pub rhap: Array2<u8>,
     pub rprob: Array1<f32>,
     pub afreq: Array1<f32>,
 }
@@ -44,23 +44,22 @@ impl Block {
         indmap.iter().for_each(|&v| clustsize[v as usize] += 1);
 
         let mut rprob = Vec::<f32>::with_capacity(nvar);
-        let mut rhap: Vec<BitVec> = Vec::new();
+        let nuniq_bytes = (nuniq + 7) / 8;
+        let mut rhap = Array2::<u8>::zeros((nvar, nuniq_bytes));
         let mut afreq = Vec::<f32>::with_capacity(nvar);
 
         // read block data
-        for _ in 0..nvar {
+        for i in 0..nvar {
             let line = lines_iter.next()?.unwrap();
             let mut iter = line.split_ascii_whitespace();
             let tok = iter.nth(7).unwrap(); // info field
             let tok = tok.split(";").collect::<Vec<_>>();
 
-            //let mut new_eprob = None;
             let mut new_rprob = None;
 
             for t in tok {
                 let t = t.split("=").collect::<Vec<_>>();
                 match t[0] {
-                    //"Err" => new_eprob = Some(t[1].parse::<f64>().unwrap()),
                     "Recom" => new_rprob = Some(t[1].parse::<f32>().unwrap()),
                     _ => continue,
                 }
@@ -71,9 +70,12 @@ impl Block {
             let data = iter.next().unwrap(); // data for one variant
             let mut alt_count = 0;
 
-            let mut new_rhap_row = bitvec![Lsb0, usize; 0; nuniq];
+            //let mut new_rhap_row = bitvec![Lsb0, usize; 0; nuniq];
+            let mut rhap_row_raw = rhap.row_mut(i);
+            let new_rhap_row =
+                BitSlice::<Lsb0, u8>::from_slice_mut(rhap_row_raw.as_slice_mut().unwrap()).unwrap();
             data.chars()
-                .zip(new_rhap_row.as_mut_bitslice())
+                .zip(new_rhap_row)
                 .enumerate()
                 .for_each(|(ind, (b, mut r))| {
                     let geno = match b {
@@ -86,7 +88,6 @@ impl Block {
                         alt_count += clustsize[ind];
                     }
                 });
-            rhap.push(new_rhap_row);
             afreq.push(
                 f32::from(u16::try_from(alt_count).unwrap()) / f32::from(u16::try_from(m).unwrap()),
             );
