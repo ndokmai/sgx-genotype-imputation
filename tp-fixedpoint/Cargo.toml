@@ -10,7 +10,7 @@ paste = "1.0"
 ndarray = { version = "0.15" , features = ["serde"] }
 num-traits = "0.2"
 serde = { version = "1.0", features = ["derive"] }
-timing-shield = "0.2"
+timing-shield = "0.3"
 rustats = "0.1"
 derive_more = "0.99"
 

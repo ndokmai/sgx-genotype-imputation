@@ -1,6 +1,5 @@
 #![feature(const_fn_floating_point_arithmetic)]
 #![feature(const_mut_refs)]
-#![feature(const_fn_trait_bound)]
 #![allow(dead_code)]
 
 mod fixed_32;

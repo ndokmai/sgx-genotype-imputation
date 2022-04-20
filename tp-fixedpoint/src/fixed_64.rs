@@ -3,7 +3,7 @@ use paste::paste;
 use std::mem::transmute;
 use timing_shield::{TpBool, TpCondSwap, TpEq, TpI64, TpOrd, TpU32};
 
-use ndarray::{Array1, Zip};
+use ndarray::{Array1, ArrayView2, ArrayViewMut2, Zip};
 
 macro_rules! new_self {
     ($inner: expr) => {
@@ -47,7 +47,7 @@ macro_rules! impl_approx {
                 out
             }
 
-            fn $f(self) -> Self {
+            pub fn $f(self) -> Self {
                 use $f::*;
                 let f = TpBool::protect(false);
                 let t = TpBool::protect(true);
@@ -91,7 +91,6 @@ macro_rules! impl_approx {
     };
 }
 
-/// Fixed in regular (no log) space. For internal use only.
 #[derive(Clone, Copy)]
 pub struct TpFixed64<const F: usize> {
     inner: TpI64,
@@ -102,7 +101,7 @@ impl<const F: usize> TpFixed64<F> {
     pub const NAN: Self = new_self_raw!(i64::MAX);
 
     pub const fn protect_f32(f: f32) -> Self {
-        new_self_raw!((f * (1 << F) as f32) as i64)
+        new_self_raw!((f as f64 * (1u64 << F) as f64) as i64)
     }
 
     pub const fn protect_i64(i: i64) -> Self {
@@ -110,11 +109,33 @@ impl<const F: usize> TpFixed64<F> {
     }
 
     pub fn expose_into_f32(self) -> f32 {
-        self.inner.expose() as f32 / (F as f32).exp2()
+        (self.inner.expose() as f64 / (F as f64).exp2()) as f32
     }
 
     pub(crate) fn into_inner(self) -> TpI64 {
         self.inner
+    }
+
+    pub fn into_frac<const G: usize>(mut self) -> TpFixed64<G> {
+        if G > F {
+            self.inner <<= (G - F) as u32;
+            todo!()
+        } else if F > G {
+            self.inner >>= (F - G) as u32;
+        }
+        unsafe { transmute(self) }
+    }
+
+    pub fn leading_zeros(self) -> TpU32 {
+        TpU32::protect(self.inner.expose().leading_zeros())
+    }
+
+    pub fn max(self, other: Self) -> Self {
+        self.tp_gt(&other).select(self, other)
+    }
+
+    pub fn min(self, other: Self) -> Self {
+        self.tp_lt(&other).select(self, other)
     }
 
     /// lse(a, b) = ln(exp(a) + exp(b))
@@ -217,11 +238,48 @@ impl<const F: usize> TpFixed64<F> {
             .for_each(|a, b| *a -= ln2 * b.as_i64());
         taylor_approx
     }
+
+    pub fn matmul(a: ArrayView2<Self>, b: ArrayView2<Self>, mut c: ArrayViewMut2<Self>) {
+        assert_eq!(a.ncols(), b.nrows());
+        assert_eq!(c.nrows(), a.nrows());
+        assert_eq!(c.ncols(), b.ncols());
+        let a_128 = a.map(|v| Into::<TpI128>::into(v.inner));
+        let b_128 = b.map(|v| Into::<TpI128>::into(v.inner));
+        Zip::from(a_128.rows())
+            .and(c.rows_mut())
+            .for_each(|a_row, mut c_row| {
+                Zip::from(b_128.columns())
+                    .and(&mut c_row)
+                    .for_each(|b_col, c_e| {
+                        *c_e = new_self!((Zip::from(&a_row)
+                            .and(&b_col)
+                            .fold(TpI128::protect(0), |accu, &a, &b| accu + a * b)
+                            >> F as u32)
+                            .into())
+                    })
+            });
+    }
 }
 
 impl<const F: usize> From<TpFixed32<F>> for TpFixed64<F> {
     fn from(v: TpFixed32<F>) -> Self {
         new_self!(v.into_inner().as_i64())
+    }
+}
+
+impl<const F: usize> num_traits::Zero for TpFixed64<F> {
+    fn zero() -> Self {
+        Self::ZERO
+    }
+
+    fn is_zero(&self) -> bool {
+        panic!("Unsafe operation");
+    }
+}
+
+impl<const F: usize> num_traits::One for TpFixed64<F> {
+    fn one() -> Self {
+        Self::protect_i64(1)
     }
 }
 
@@ -267,6 +325,9 @@ macro_rules! impl_arith_rhs {
 
 impl_arith! {add, Add}
 impl_arith! {sub, Sub}
+impl_arith! {bitor, BitOr}
+impl_arith! {bitand, BitAnd}
+impl_arith! {bitxor, BitXor}
 impl_arith_rhs! {shr, Shr, u32}
 impl_arith_rhs! {shl, Shl, u32}
 
@@ -323,11 +384,6 @@ impl<const F: usize> std::ops::Div for TpFixed64<F> {
     type Output = Self;
     #[inline]
     fn div(self, rhs: Self) -> Self::Output {
-        //if rhs.inner.expose() == 0 {
-        //return new_self_raw!(i64::MAX);
-        //}
-        //new_self_raw!((((self.inner.expose() as i128) << F as u32) / rhs.inner.expose() as i128) as i64)
-
         use timing_shield::TpU64;
         let self_is_neg = self.tp_lt(&Self::ZERO);
         let rhs_is_neg = rhs.tp_lt(&Self::ZERO);
