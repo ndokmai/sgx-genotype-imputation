@@ -50,7 +50,7 @@ impl Block {
 
         // read block data
         for i in 0..nvar {
-            let line = lines_iter.next()?.unwrap();
+            let line = lines_iter.next().unwrap().unwrap();
             let mut iter = line.split_ascii_whitespace();
             let tok = iter.nth(7).unwrap(); // info field
             let tok = tok.split(";").collect::<Vec<_>>();
@@ -70,7 +70,6 @@ impl Block {
             let data = iter.next().unwrap(); // data for one variant
             let mut alt_count = 0;
 
-            //let mut new_rhap_row = bitvec![Lsb0, usize; 0; nuniq];
             let mut rhap_row_raw = rhap.row_mut(i);
             let new_rhap_row =
                 BitSlice::<Lsb0, u8>::from_slice_mut(rhap_row_raw.as_slice_mut().unwrap()).unwrap();
@@ -102,5 +101,60 @@ impl Block {
             rprob: Array1::from(rprob),
             afreq: Array1::from(afreq),
         })
+    }
+
+    pub fn view<'a>(&'a self) -> BlockView<'a> {
+        BlockView {
+            indmap: self.indmap.view(),
+            nvar: self.nvar,
+            nuniq: self.nuniq,
+            clustsize: self.clustsize.view(),
+            rhap: self.rhap.view(),
+            rprob: self.rprob.view(),
+            afreq: self.afreq.view(),
+        }
+    }
+
+    pub fn subview<'a>(&'a self, from: usize, to: usize) -> BlockView<'a> {
+        let rhap = self.rhap.slice(ndarray::s![from..to, ..]);
+        let nvar = to - from;
+        let rprob = self.rprob.slice(ndarray::s![from..to]);
+
+        BlockView {
+            indmap: self.indmap.view(),
+            nvar,
+            nuniq: self.nuniq,
+            clustsize: self.clustsize.view(),
+            rhap,
+            rprob,
+            afreq: self.afreq.view(),
+        }
+    }
+}
+
+use ndarray::{ArrayView1, ArrayView2};
+
+#[derive(Clone)]
+pub struct BlockView<'a> {
+    pub indmap: ArrayView1<'a, u16>,
+    pub nvar: usize,
+    pub nuniq: usize,
+    pub clustsize: ArrayView1<'a, u16>,
+    pub rhap: ArrayView2<'a, u8>,
+    pub rprob: ArrayView1<'a, f32>,
+    pub afreq: ArrayView1<'a, f32>,
+}
+
+impl<'a> BlockView<'a> {
+    pub fn to_owned(&self) -> Block {
+        Block {
+            indmap: self.indmap.to_owned(),
+            nvar: self.nvar,
+            nuniq: self.nuniq,
+            clustsize: self.clustsize.to_owned(),
+            rhap: self.rhap.to_owned(),
+            rprob: self.rprob.to_owned(),
+            afreq: self.afreq.to_owned(),
+        }
     }
 }

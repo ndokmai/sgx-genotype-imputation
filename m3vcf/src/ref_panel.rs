@@ -1,11 +1,11 @@
 use crate::block::Block;
-use flate2::read::GzDecoder;
+use flate2::bufread::MultiGzDecoder;
 use std::fs::File;
 use std::io::Result;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct RefPanelMeta {
     pub n_haps: usize,
     pub n_markers: usize,
@@ -14,7 +14,8 @@ pub struct RefPanelMeta {
 
 pub fn load_ref_panel(ref_panel_path: &Path) -> (RefPanelMeta, impl Iterator<Item = Block>) {
     let f = File::open(ref_panel_path).expect("Unable to open reference file");
-    let f = GzDecoder::new(f);
+    let f = BufReader::new(f);
+    let f = MultiGzDecoder::new(f);
     let f = BufReader::new(f);
 
     let mut lines_iter = f.lines();
