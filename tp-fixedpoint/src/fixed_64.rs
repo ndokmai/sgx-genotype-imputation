@@ -3,7 +3,7 @@ use paste::paste;
 use std::mem::transmute;
 use timing_shield::{TpBool, TpCondSwap, TpEq, TpI64, TpOrd, TpU32};
 
-use ndarray::{Array1, ArrayView2, ArrayViewMut2, Zip};
+use ndarray::{Array1, ArrayView1, ArrayView2, ArrayViewMut2, Zip};
 
 macro_rules! new_self {
     ($inner: expr) => {
@@ -237,6 +237,16 @@ impl<const F: usize> TpFixed64<F> {
             .and(&shift)
             .for_each(|a, b| *a -= ln2 * b.as_i64());
         taylor_approx
+    }
+    pub fn dot(a: ArrayView1<Self>, b: ArrayView1<Self>) -> Self {
+        assert_eq!(a.len(), b.len());
+        let a_128 = a.map(|v| Into::<TpI128>::into(v.inner));
+        let b_128 = b.map(|v| Into::<TpI128>::into(v.inner));
+        new_self!((Zip::from(&a_128)
+            .and(&b_128)
+            .fold(TpI128::protect(0), |accu, &a, &b| accu + a * b)
+            >> F as u32)
+            .into())
     }
 
     pub fn matmul(a: ArrayView2<Self>, b: ArrayView2<Self>, mut c: ArrayViewMut2<Self>) {
